@@ -29,7 +29,7 @@ export default function CarDetailPage() {
   const { formatPrice } = useCurrencyStore();
   const { user } = useAuthStore();
   const isStaff = Boolean(user && user.role !== 'CLIENTE');
-  const staffTarget = user?.role === 'BANCO' ? '/analises' : '/frota';
+  const staffTarget = '/frota';
 
   const [car, setCar] = useState<Automovel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -437,7 +437,7 @@ export default function CarDetailPage() {
                   to={staffTarget}
                   className="px-10 py-3 border border-white/20 bg-white/10 hover:bg-[#FF1717] hover:border-[#FF1717] text-white text-xs sm:text-sm font-medium tracking-wide rounded-full transition-all duration-200 shadow-lg active:scale-[0.98]"
                 >
-                  {user?.role === 'BANCO' ? 'Painel de Auditoria' : 'Gerenciar nos Boxes'}
+                  Gerenciar nos Boxes
                 </Link>
               ) : (
                 <button

@@ -116,7 +116,7 @@ class AdminDashboardFacadeTest {
     }
 
     @Test
-    @DisplayName("Deve registrar sinistro em pedido e lançar cobrança no ApexPay do piloto")
+    @DisplayName("Deve registrar sinistro em pedido APROVADO e lançar cobrança no ApexPay do piloto")
     void deveRegistrarSinistroELancarCobrancaApexPay() {
         Cliente cliente = new Cliente();
         cliente.setEmail("piloto@apex.com");
@@ -125,6 +125,8 @@ class AdminDashboardFacadeTest {
         pedido.setId(55L);
         pedido.setTrackingCode("APX-55");
         pedido.setCliente(cliente);
+        pedido.setStatus("APROVADO");
+        pedido.setTipoServico("TRACK_EXPERIENCE");
         pedido.setValorSinistro(new BigDecimal("500.00"));
 
         TransacaoApexPay txSinistro = new TransacaoApexPay(
@@ -145,5 +147,175 @@ class AdminDashboardFacadeTest {
         verify(apexPayFacade, times(1))
                 .lancarCobrancaSinistro("piloto@apex.com", new BigDecimal("2500.00"), "APX-55", "Avaria asa dianteira");
         verify(pedidoRepository, times(1)).update(pedido);
+    }
+
+    @Test
+    @DisplayName("Deve bloquear registro de sinistro para pedidos ainda não aprovados")
+    void deveBloquearSinistroEmPedidoNaoAprovado() {
+        Pedido pendente = new Pedido();
+        pendente.setId(56L);
+        pendente.setCliente(new Cliente());
+        pendente.setStatus("AGUARDANDO_APROVACAO");
+        pendente.setTipoServico("TRACK_EXPERIENCE");
+
+        when(pedidoRepository.findById(56L)).thenReturn(Optional.of(pendente));
+
+        assertThrows(IllegalStateException.class, () ->
+                facade.registrarSinistro(56L, new BigDecimal("1000.00"), "Tentativa em pendente")
+        );
+        verify(apexPayFacade, never()).lancarCobrancaSinistro(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Deve bloquear registro de sinistro em sessão VISITA_BOX")
+    void deveBloquearSinistroEmVisitaBox() {
+        Pedido visita = new Pedido();
+        visita.setId(57L);
+        visita.setCliente(new Cliente());
+        visita.setStatus("APROVADO");
+        visita.setTipoServico("VISITA_BOX");
+
+        when(pedidoRepository.findById(57L)).thenReturn(Optional.of(visita));
+
+        assertThrows(IllegalArgumentException.class, () ->
+                facade.registrarSinistro(57L, new BigDecimal("1000.00"), "Tentativa em visita ao box")
+        );
+        verify(apexPayFacade, never()).lancarCobrancaSinistro(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Deve listar pilotos com filtro de busca e status")
+    void deveListarPilotosComFiltro() {
+        Usuario u1 = new Usuario();
+        u1.setId(10L);
+        u1.setNome("Ayrton Senna");
+        u1.setEmail("senna@apex.com");
+        u1.setRole("ROLE_CLIENTE");
+        u1.setStatusFinanceiro("REGULAR");
+        u1.setStatusConta("ATIVO");
+
+        Usuario u2 = new Usuario();
+        u2.setId(20L);
+        u2.setNome("Alain Prost");
+        u2.setEmail("prost@apex.com");
+        u2.setRole("ROLE_CLIENTE");
+        u2.setStatusFinanceiro("INADIMPLENTE");
+        u2.setStatusConta("BLOQUEADO_RESERVAS");
+
+        when(usuarioRepository.findAll()).thenReturn(List.of(u1, u2));
+
+        List<Map<String, Object>> resBusca = facade.listarUsuariosAdmin("Senna", "TODOS");
+        assertEquals(1, resBusca.size());
+        assertEquals("Ayrton Senna", resBusca.get(0).get("nome"));
+
+        List<Map<String, Object>> resDevedor = facade.listarUsuariosAdmin("", "DEVEDORES");
+        assertEquals(1, resDevedor.size());
+        assertEquals("Alain Prost", resDevedor.get(0).get("nome"));
+    }
+
+    @Test
+    @DisplayName("Deve atualizar dados do piloto com validação oficial de CNH")
+    void deveAtualizarPilotoComSucesso() {
+        Usuario u = new Usuario();
+        u.setId(30L);
+        u.setNome("Lewis Hamilton");
+        u.setEmail("hamilton@apex.com");
+        u.setRole("ROLE_CLIENTE");
+        u.setStatusFinanceiro("REGULAR");
+        u.setStatusConta("ATIVO");
+
+        when(usuarioRepository.findById(30L)).thenReturn(Optional.of(u));
+        when(usuarioRepository.update(any(Usuario.class))).thenReturn(u);
+        when(pedidoRepository.findAll()).thenReturn(List.of());
+        when(apexPayFacade.getResumoCarteira("hamilton@apex.com")).thenReturn(Map.of("saldo", BigDecimal.ZERO));
+
+        Map<String, Object> atualizado = facade.atualizarUsuarioAdmin(30L, Map.of(
+                "nome", "Sir Lewis Hamilton",
+                "telefone", "11999998888",
+                "cnhNumero", com.aluguel.utils.CnhValidator.CNH_TESTE_OFICIAL,
+                "statusConta", "ATIVO"
+        ));
+
+        assertEquals("Sir Lewis Hamilton", atualizado.get("nome"));
+        assertEquals("11999998888", atualizado.get("telefone"));
+        assertEquals(com.aluguel.utils.CnhValidator.CNH_TESTE_OFICIAL, atualizado.get("cnhNumero"));
+    }
+
+    @Test
+    @DisplayName("Deve bloquear alteração de senha ou rebaixamento da conta Administrador")
+    void deveBloquearAlteracaoSenhaDoAdmin() {
+        Usuario admin = new Usuario();
+        admin.setId(99L);
+        admin.setNome("Apex Race Control");
+        admin.setEmail("admin@apex.com");
+        admin.setRole("ROLE_ADMIN");
+
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.of(admin));
+
+        IllegalStateException exSenha = assertThrows(IllegalStateException.class, () ->
+                facade.atualizarUsuarioAdmin(99L, Map.of("password", "hack123"))
+        );
+        assertTrue(exSenha.getMessage().contains("senha da conta de Administrador é protegida"));
+
+        IllegalStateException exRole = assertThrows(IllegalStateException.class, () ->
+                facade.atualizarUsuarioAdmin(99L, Map.of("role", "CLIENTE"))
+        );
+        assertTrue(exRole.getMessage().contains("Não é permitido rebaixar os privilégios"));
+    }
+
+    @Test
+    @DisplayName("Deve permitir cadastrar novo piloto via CRUD administrativo")
+    void deveCriarNovoPilotoAdminComSucesso() {
+        when(usuarioRepository.findByEmail("novo@apex.com")).thenReturn(Optional.empty());
+        when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> {
+            Usuario u = inv.getArgument(0);
+            u.setId(105L);
+            return u;
+        });
+
+        Map<String, Object> criado = facade.criarUsuarioAdmin(Map.of(
+                "nome", "Charles Leclerc",
+                "email", "novo@apex.com",
+                "password", "leclerc16",
+                "telefone", "11988887777",
+                "cnhNumero", com.aluguel.utils.CnhValidator.CNH_TESTE_OFICIAL,
+                "cnhCategoria", "B",
+                "dataNascimento", "1997-10-16"
+        ));
+
+        assertNotNull(criado);
+        assertEquals("Charles Leclerc", criado.get("nome"));
+        assertEquals("novo@apex.com", criado.get("email"));
+        assertEquals(com.aluguel.utils.CnhValidator.CNH_TESTE_OFICIAL, criado.get("cnhNumero"));
+    }
+
+    @Test
+    @DisplayName("Deve impedir exclusão da conta Administrador e permitir exclusão de piloto comum")
+    void deveImpedirExclusaoDoAdminEPermitirDePilotoComum() {
+        Usuario admin = new Usuario();
+        admin.setId(1L);
+        admin.setEmail("admin@apex.com");
+        admin.setRole("ROLE_ADMIN");
+
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                facade.excluirUsuarioAdmin(1L)
+        );
+        assertTrue(ex.getMessage().contains("Não é permitido excluir o usuário Administrador principal"));
+
+        Usuario piloto = new Usuario();
+        piloto.setId(50L);
+        piloto.setNome("Piloto Desistente");
+        piloto.setEmail("desistente@apex.com");
+        piloto.setRole("ROLE_CLIENTE");
+
+        when(usuarioRepository.findById(50L)).thenReturn(Optional.of(piloto));
+        when(pedidoRepository.findAll()).thenReturn(List.of());
+
+        Map<String, Object> resp = facade.excluirUsuarioAdmin(50L);
+        assertTrue((Boolean) resp.get("success"));
+        assertTrue((Boolean) resp.get("deleted"));
+        verify(usuarioRepository, times(1)).delete(piloto);
     }
 }

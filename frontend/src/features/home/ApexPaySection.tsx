@@ -1,305 +1,261 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Percent, Wallet, ArrowRight } from 'lucide-react';
+import {
+  Wallet,
+  Clock,
+  ShieldAlert,
+  ArrowRight,
+  CheckCircle2,
+  Terminal,
+  RefreshCw,
+} from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 
-interface TierOption {
-  id: string;
-  name: string;
-  discount: string;
-  threshold: string;
-  tagline: string;
-  surfaceClass: string;
-  borderClass: string;
-  glowColor: string;
-  accentText: string;
-  pillClass: string;
+interface SandboxMode {
+  id: 'saldo' | 'fatura' | 'juros';
+  tabLabel: string;
+  endpointTag: string;
+  headline: string;
+  description: string;
+  badgeText: string;
+  badgeClass: string;
+  balanceLabel: string;
+  balanceValue: string;
+  ledgerEntries: {
+    label: string;
+    detail: string;
+    amount: string;
+    positive?: boolean;
+  }[];
+  ruleNote: string;
 }
 
-const APEX_TIERS: TierOption[] = [
+const SANDBOX_MODES: SandboxMode[] = [
   {
-    id: 'bronze',
-    name: 'Bronze',
-    discount: '0%',
-    threshold: 'Entrada',
-    tagline: 'Acesso direto à carteira ApexPay e emissão de caução para baterias avulsas.',
-    surfaceClass: 'from-[#1B1817] via-[#121114] to-[#0A0A0D]',
-    borderClass: 'border-amber-700/30',
-    glowColor: 'rgba(180, 115, 65, 0.14)',
-    accentText: 'text-amber-300/80',
-    pillClass: 'border-amber-700/40 text-amber-200/80 bg-amber-900/15',
+    id: 'saldo',
+    tabLabel: 'Saldo Sandbox',
+    endpointTag: 'CARTEIRA_APEXPAY · GREEN FLAG',
+    headline: 'Aprovação Imediata via Saldo',
+    description:
+      'Adicione créditos fictícios via recarga instantânea e confirme vagas nos boxes em segundos, sem cartão de crédito real.',
+    badgeText: 'APROVADO · BOX LIBERADO',
+    badgeClass: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300',
+    balanceLabel: 'Saldo Simulado em Conta',
+    balanceValue: 'R$ 11.150,00',
+    ledgerEntries: [
+      {
+        label: 'Recarga Instantânea Sandbox',
+        detail: 'Crédito simulado · POST /api/apexpay/deposito',
+        amount: '+ R$ 15.000,00',
+        positive: true,
+      },
+      {
+        label: 'Track Experience · Spa-Francorchamps',
+        detail: 'Débito imediato na reserva · Status APROVADO',
+        amount: '- R$ 3.850,00',
+      },
+    ],
+    ruleNote: 'Cancelamentos estornam o saldo integralmente para a carteira sandbox.',
   },
   {
-    id: 'silver',
-    name: 'Silver',
-    discount: '5%',
-    threshold: 'R$ 10.000+',
-    tagline: '5% de desconto automático em todas as sessões após acumular R$ 10 mil em depósitos.',
-    surfaceClass: 'from-[#2A2F3A] via-[#171A21] to-[#0B0D12]',
-    borderClass: 'border-slate-300/30',
-    glowColor: 'rgba(203, 213, 225, 0.16)',
-    accentText: 'text-slate-200',
-    pillClass: 'border-slate-300/40 text-slate-100 bg-slate-400/10',
+    id: 'fatura',
+    tabLabel: 'Fatura Pós-Paga',
+    endpointTag: 'FATURA_APEXPAY · HOMOLOGAÇÃO',
+    headline: 'Débito Apenas na Confirmação',
+    description:
+      'Reserve mesmo com saldo zerado. A fatura aguarda a homologação do Race Control antes de lançar qualquer débito na sua conta.',
+    badgeText: 'AGUARDANDO_APROVACAO',
+    badgeClass: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
+    balanceLabel: 'Saldo Após Reserva (Pré-Aprovação)',
+    balanceValue: 'R$ 0,00',
+    ledgerEntries: [
+      {
+        label: 'Pré-reserva de Box · Interlagos',
+        detail: 'Pagamento: FATURA_AGUARDANDO_APROVACAO',
+        amount: 'R$ 2.100,00 (retido)',
+        positive: true,
+      },
+      {
+        label: 'Homologação Race Control',
+        detail: 'Ao aprovar → debita em carteira/fatura; ao rejeitar → cancela sem ônus',
+        amount: 'Somente no aceite',
+      },
+    ],
+    ruleNote: 'Contrapropostas de horário/slot também só debitam quando o piloto aceita.',
   },
   {
-    id: 'gold',
-    name: 'Gold',
-    discount: '10%',
-    threshold: 'R$ 25.000+',
-    tagline: '10% de desconto automático em qualquer circuito e análise prioritária de crédito.',
-    surfaceClass: 'from-[#332A18] via-[#1B1710] to-[#0B0A08]',
-    borderClass: 'border-amber-300/35',
-    glowColor: 'rgba(245, 196, 81, 0.16)',
-    accentText: 'text-amber-200',
-    pillClass: 'border-amber-300/40 text-amber-100 bg-amber-400/10',
-  },
-  {
-    id: 'apex_black',
-    name: 'Apex Black',
-    discount: '15%',
-    threshold: 'R$ 50.000+',
-    tagline: 'Nível máximo: 15% de desconto automático, cobertura estendida e prioridade de box.',
-    surfaceClass: 'from-[#181920] via-[#0D0E13] to-[#050608]',
-    borderClass: 'border-[#FF1717]/40',
-    glowColor: 'rgba(255, 23, 23, 0.18)',
-    accentText: 'text-[#FF1717]',
-    pillClass: 'border-[#FF1717]/50 text-white bg-[#FF1717]/15',
+    id: 'juros',
+    tabLabel: 'Franquia & Juros',
+    endpointTag: 'SINISTRO_PISTA · 0,1% / DIA',
+    headline: 'Controle Transparente de Pendências',
+    description:
+      'Eventuais faturas em aberto ou franquias de dano em pista negativam o saldo simulado, bloqueando novos agendamentos até a quitação.',
+    badgeText: 'INADIMPLENTE · BLOQUEADO',
+    badgeClass: 'border-rose-500/35 bg-rose-500/10 text-rose-300',
+    balanceLabel: 'Saldo Devedor Simulado',
+    balanceValue: '- R$ 2.502,50',
+    ledgerEntries: [
+      {
+        label: 'Franquia de Pista Homologada (Sinistro)',
+        detail: 'Lançado apenas em sessões APROVADO de condução',
+        amount: '- R$ 2.500,00',
+      },
+      {
+        label: 'Encargo Diário de Atraso (0,1% a.d.)',
+        detail: 'Incidência automática sobre saldo negativo em aberto',
+        amount: '- R$ 2,50',
+      },
+    ],
+    ruleNote: 'Um único depósito no valor devido quita a pendência e desbloqueia a conta.',
   },
 ];
 
-const BANK_FEATURES = [
-  {
-    icon: ShieldCheck,
-    title: 'Caução sem travar seu cartão',
-    description:
-      'Garantias de pista avaliadas diretamente pelo motor de risco bancário, sem comprometer o limite do seu cartão pessoal.',
-  },
-  {
-    icon: Percent,
-    title: 'Fidelidade progressiva real',
-    description:
-      'Cada depósito acumulado eleva seu nível do Bronze ao Apex Black, aplicando até 15% de desconto automático nas reservas.',
-  },
+const SANDBOX_PILLARS = [
   {
     icon: Wallet,
-    title: 'Carteira dedicada de pista',
+    title: 'Pagamento Simulado sem Dinheiro Real',
     description:
-      'Saldo exclusivo para baterias, débito instantâneo no agendamento e histórico transparente de todas as movimentações.',
+      'Todo o fluxo financeiro roda em um gateway próprio (ApexPay Sandbox) para você testar recargas, agendamentos e estornos com segurança total.',
+  },
+  {
+    icon: Clock,
+    title: 'Pré-Pago Imediato ou Fatura em 1 Etapa',
+    description:
+      'Escolha débito na hora via saldo para aprovação instantânea ou fatura pós-paga analisada diretamente pelo Race Control.',
+  },
+  {
+    icon: ShieldAlert,
+    title: 'Regras Reais de Paddock',
+    description:
+      'Cobertura operacional transparente, histórico imutável de transações e proteção de agenda contra inadimplência em aberto.',
   },
 ];
 
 export function ApexPaySection() {
   const navigate = useNavigate();
   const { user, token } = useAuthStore();
-  const [selectedTierIdx, setSelectedTierIdx] = useState(3); // Apex Black em destaque inicial
-  const cardWrapperRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<'saldo' | 'fatura' | 'juros'>('saldo');
 
-  const activeTier = APEX_TIERS[selectedTierIdx];
-
-  // Física 3D suave ao mover o ponteiro sobre o cartão
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
-
-  const rotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [10, -10]), {
-    stiffness: 180,
-    damping: 22,
-  });
-  const rotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-12, 12]), {
-    stiffness: 180,
-    damping: 22,
-  });
-  const sheenX = useSpring(useTransform(mouseX, [-0.5, 0.5], [15, 85]), {
-    stiffness: 150,
-    damping: 24,
-  });
-  const sheenY = useSpring(useTransform(mouseY, [-0.5, 0.5], [15, 85]), {
-    stiffness: 150,
-    damping: 24,
-  });
-
-  const sheenBackground = useTransform(
-    [sheenX, sheenY],
-    ([sx, sy]: number[]) =>
-      `radial-gradient(circle at ${sx}% ${sy}%, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.03) 38%, transparent 70%)`
-  );
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = cardWrapperRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const nx = (e.clientX - rect.left) / rect.width - 0.5;
-    const ny = (e.clientY - rect.top) / rect.height - 0.5;
-    mouseX.set(nx);
-    mouseY.set(ny);
-  };
-
-  const handleMouseLeave = () => {
-    mouseX.set(0);
-    mouseY.set(0);
-  };
+  const activeMode = SANDBOX_MODES.find((m) => m.id === activeTab) || SANDBOX_MODES[0];
 
   return (
-    <section
-      id="apexpay"
-      className="relative py-24 sm:py-32 px-6 bg-[#08090C] border-t border-white/[0.08] text-white overflow-hidden select-none"
-    >
-      {/* Luz ambiente dinâmica conforme o tier selecionado */}
+    <section className="relative py-24 md:py-32 bg-[#08090C] border-t border-white/[0.06] overflow-hidden">
+      {/* Glow radial discreto */}
       <div
-        className="absolute top-1/2 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[420px] rounded-full blur-[130px] pointer-events-none transition-colors duration-700"
-        style={{ background: activeTier.glowColor }}
+        className="pointer-events-none absolute -top-24 left-1/4 w-[520px] h-[520px] rounded-full blur-[150px] opacity-30"
+        style={{ background: 'radial-gradient(circle, rgba(255,23,23,0.18), transparent 70%)' }}
       />
 
-      <div className="container mx-auto max-w-6xl relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-14 items-center">
-          {/* ===============================================================
-              ESQUERDA: CARTÃO METÁLICO INTERATIVO 3D + SELETOR DE TIER
-             =============================================================== */}
-          <div className="lg:col-span-5 flex flex-col items-center">
-            <div
-              ref={cardWrapperRef}
-              onMouseMove={handleMouseMove}
-              onMouseLeave={handleMouseLeave}
-              style={{ perspective: 1100 }}
-              className="w-full max-w-[400px] py-3"
-            >
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+          {/* Esquerda: Console Interativo do Gateway Sandbox ApexPay */}
+          <div className="lg:col-span-6 space-y-6">
+            {/* Seletor de cenários do Gateway Sandbox */}
+            <div className="inline-flex flex-wrap gap-1.5 p-1 rounded-full bg-white/[0.03] border border-white/10">
+              {SANDBOX_MODES.map((m) => {
+                const isActive = m.id === activeTab;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setActiveTab(m.id)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-[#FF1717] text-white shadow-md shadow-[#FF1717]/25'
+                        : 'text-white/60 hover:text-white'
+                    }`}
+                  >
+                    {m.tabLabel}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Painel Console Sandbox */}
+            <AnimatePresence mode="wait">
               <motion.div
-                style={{
-                  rotateX,
-                  rotateY,
-                  transformStyle: 'preserve-3d',
-                }}
-                className={`relative aspect-[1.586/1] w-full rounded-2xl bg-gradient-to-br ${activeTier.surfaceClass} border ${activeTier.borderClass} p-6 sm:p-7 flex flex-col justify-between shadow-[0_28px_60px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.12)] transition-colors duration-500 overflow-hidden`}
+                key={activeMode.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#12151D] via-[#0B0D12] to-[#08090C] p-6 sm:p-7 shadow-[0_30px_80px_rgba(0,0,0,0.65)] space-y-6"
               >
-                {/* Brilho metálico especular acompanhando o cursor */}
-                <motion.div
-                  style={{ background: sheenBackground }}
-                  className="absolute inset-0 pointer-events-none mix-blend-screen"
-                />
-
-                {/* Textura sutil escovada */}
-                <div className="absolute inset-0 opacity-[0.04] bg-[repeating-linear-gradient(115deg,#fff_0px,#fff_1px,transparent_1px,transparent_4px)] pointer-events-none" />
-
-                {/* Topo do Cartão: Logo + Tag de Tier */}
-                <div className="relative z-10 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#FF1717]" />
-                    <span className="text-base sm:text-lg font-normal tracking-[-0.03em] text-white lowercase font-sans">
-                      apex pay
-                    </span>
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/[0.08]">
+                  <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-white/55">
+                    <Terminal size={13} className="text-[#FF1717]" />
+                    <span>{activeMode.endpointTag}</span>
                   </div>
-
                   <span
-                    className={`text-[10px] font-mono uppercase tracking-[0.2em] px-2.5 py-0.5 rounded-full border ${activeTier.pillClass} transition-colors duration-300`}
+                    className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border ${activeMode.badgeClass}`}
                   >
-                    {activeTier.name}
+                    {activeMode.badgeText}
                   </span>
                 </div>
 
-                {/* Centro: Chip EMV metálico escuro + Contactless */}
-                <div className="relative z-10 flex items-center justify-between my-auto">
-                  <svg
-                    width="38"
-                    height="28"
-                    viewBox="0 0 38 28"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="opacity-75"
-                    aria-hidden="true"
-                  >
-                    <rect
-                      x="0.75"
-                      y="0.75"
-                      width="36.5"
-                      height="26.5"
-                      rx="4.5"
-                      fill="rgba(255,255,255,0.06)"
-                      stroke="rgba(255,255,255,0.22)"
-                      strokeWidth="1.2"
-                    />
-                    <path
-                      d="M12 1V27M26 1V27M1 10H12M1 18H12M26 10H37M26 18H37M12 14H26"
-                      stroke="rgba(255,255,255,0.18)"
-                      strokeWidth="1"
-                    />
-                  </svg>
-
-                  <div className="text-right">
-                    <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/40">
-                      Benefício em pista
-                    </p>
-                    <p className={`text-2xl sm:text-3xl font-medium tracking-tight tabular-nums ${activeTier.accentText} transition-colors duration-300`}>
-                      {activeTier.discount === '0%' ? 'Base' : `-${activeTier.discount}`}
-                    </p>
-                  </div>
+                <div>
+                  <p className="text-[11px] font-mono uppercase tracking-widest text-white/45">
+                    {activeMode.balanceLabel}
+                  </p>
+                  <p className="text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums text-white mt-1">
+                    {activeMode.balanceValue}
+                  </p>
+                  <p className="text-xs text-white/60 mt-2 leading-relaxed">
+                    {activeMode.description}
+                  </p>
                 </div>
 
-                {/* Rodapé do Cartão: Titular / Programa */}
-                <div className="relative z-10 flex items-end justify-between text-white/60">
-                  <div>
-                    <p className="text-[9px] font-mono uppercase tracking-[0.22em] text-white/35">
-                      Track Credit & Wallet
-                    </p>
-                    <p className="text-xs font-mono tracking-[0.18em] text-white/80 uppercase mt-0.5">
-                      Private Pitlane Member
-                    </p>
-                  </div>
+                {/* Mini Extrato Simulado */}
+                <div className="space-y-2.5">
+                  {activeMode.ledgerEntries.map((entry) => (
+                    <div
+                      key={entry.label}
+                      className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl bg-white/[0.025] border border-white/[0.07]"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-white truncate">{entry.label}</p>
+                        <p className="text-[11px] font-mono text-white/45 truncate mt-0.5">
+                          {entry.detail}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-xs font-mono font-semibold shrink-0 tabular-nums ${
+                          entry.positive ? 'text-emerald-400' : 'text-white/80'
+                        }`}
+                      >
+                        {entry.amount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
 
-                  <span className="text-[10px] font-mono tracking-widest text-white/45 tabular-nums">
-                    {activeTier.threshold}
-                  </span>
+                <div className="flex items-center gap-2 pt-2 border-t border-white/[0.08] text-[11px] text-white/55 font-mono">
+                  <RefreshCw size={12} className="text-[#FF1717] shrink-0" />
+                  <span>{activeMode.ruleNote}</span>
                 </div>
               </motion.div>
-            </div>
-
-            {/* Seletor de Acabamento / Tier abaixo do cartão */}
-            <div className="mt-5 w-full max-w-[400px]">
-              <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-                {APEX_TIERS.map((tier, idx) => {
-                  const isActive = idx === selectedTierIdx;
-                  return (
-                    <button
-                      key={tier.id}
-                      type="button"
-                      onClick={() => setSelectedTierIdx(idx)}
-                      className={`py-2 px-2 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-white text-[#08090C] shadow-sm'
-                          : 'text-white/55 hover:text-white hover:bg-white/[0.04]'
-                      }`}
-                    >
-                      {tier.name}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <p className="text-xs text-white/55 text-center mt-3.5 min-h-[34px] leading-relaxed">
-                {activeTier.tagline}
-              </p>
-            </div>
+            </AnimatePresence>
           </div>
 
-          {/* ===============================================================
-              DIREITA: NARRATIVA + BENTO GRID DE RECURSOS BANCÁRIOS
-             =============================================================== */}
-          <div className="lg:col-span-7 space-y-8">
+          {/* Direita: Narrativa Editorial */}
+          <div className="lg:col-span-6 space-y-8">
             <div>
-              <p className="text-[11px] font-mono font-medium tracking-[0.22em] text-white/45 uppercase mb-2.5">
-                ApexPay · Private Track Banking
+              <p className="text-[11px] font-mono uppercase tracking-[0.25em] text-[#FF1717] mb-3">
+                ApexPay · Gateway de Pagamentos Simulado
               </p>
               <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-white leading-[1.1] font-sans">
-                Crédito de Pista sem Travar seu Cartão.
+                Checkout Completo em Ambiente Sandbox.
               </h2>
               <p className="text-sm sm:text-base text-white/65 font-normal leading-relaxed mt-4 max-w-xl">
-                Baterias em circuitos internacionais exigem cauções elevadas. O ecossistema financeiro integrado da Apex avalia seu perfil, libera a garantia de pista e converte depósitos em descontos permanentes.
+                Como a plataforma é um ambiente demonstrativo sem cobrança real de cartão ou Pix bancário, o ApexPay simula todo o ciclo financeiro de um autódromo: recarga instantânea, faturas homologadas pelo Race Control, estornos e gestão de pendências.
               </p>
             </div>
 
-            {/* Bento Grid Clean (2 + 1) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {BANK_FEATURES.map((feat, idx) => {
+              {SANDBOX_PILLARS.map((feat, idx) => {
                 const Icon = feat.icon;
                 const isWide = idx === 2;
                 return (
@@ -327,31 +283,7 @@ export function ApexPaySection() {
               })}
             </div>
 
-            {/* Barra minimalista de resumo dos 4 níveis */}
-            <div className="grid grid-cols-4 gap-3 pt-4 border-t border-white/[0.08] text-center sm:text-left">
-              {APEX_TIERS.map((tier, idx) => (
-                <button
-                  key={tier.id}
-                  type="button"
-                  onClick={() => setSelectedTierIdx(idx)}
-                  className="group text-left cursor-pointer focus:outline-none"
-                >
-                  <p className="text-[10px] font-mono uppercase tracking-widest text-white/40 group-hover:text-white/70 transition-colors">
-                    {tier.name}
-                  </p>
-                  <p
-                    className={`text-sm sm:text-base font-medium tabular-nums mt-0.5 transition-colors ${
-                      idx === selectedTierIdx ? 'text-[#FF1717]' : 'text-white/80 group-hover:text-white'
-                    }`}
-                  >
-                    {tier.discount === '0%' ? 'Padrão' : `${tier.discount} off`}
-                  </p>
-                  <p className="text-[10px] text-white/40 tabular-nums">{tier.threshold}</p>
-                </button>
-              ))}
-            </div>
-
-            <div className="pt-2">
+            <div className="flex flex-wrap items-center gap-4 pt-2">
               <button
                 type="button"
                 onClick={() => {
@@ -363,9 +295,18 @@ export function ApexPaySection() {
                 }}
                 className="inline-flex items-center gap-2 bg-[#FF1717] hover:bg-[#e01414] text-white text-xs sm:text-sm font-medium px-7 py-3 rounded-full transition-all shadow-lg shadow-[#FF1717]/25 cursor-pointer"
               >
-                <span>{user?.role === 'ADMIN' ? 'Abrir Painel Financeiro Admin' : 'Acessar Minha Carteira ApexPay'}</span>
+                <span>
+                  {user?.role === 'ADMIN'
+                    ? 'Abrir Painel Financeiro Admin'
+                    : 'Abrir Minha Carteira Sandbox'}
+                </span>
                 <ArrowRight size={15} />
               </button>
+
+              <span className="inline-flex items-center gap-1.5 text-xs text-white/50 font-mono">
+                <CheckCircle2 size={13} className="text-emerald-400" />
+                Créditos fictícios gratuitos para teste
+              </span>
             </div>
           </div>
         </div>

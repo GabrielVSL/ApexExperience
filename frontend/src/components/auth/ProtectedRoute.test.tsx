@@ -17,8 +17,8 @@ describe('ProtectedRoute Component', () => {
           <Route
             path="/privado"
             element={
-              <ProtectedRoute allowedRoles={['EMPRESA']}>
-                <div>Área Exclusiva da Empresa</div>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <div>Área Exclusiva Race Control</div>
               </ProtectedRoute>
             }
           />
@@ -27,7 +27,7 @@ describe('ProtectedRoute Component', () => {
     );
 
     expect(screen.getByText('Página de Login')).toBeDefined();
-    expect(screen.queryByText('Área Exclusiva da Empresa')).toBeNull();
+    expect(screen.queryByText('Área Exclusiva Race Control')).toBeNull();
   });
 
   it('deve redirecionar quando usuário tiver role diferente da permitida', () => {
@@ -40,7 +40,7 @@ describe('ProtectedRoute Component', () => {
           <Route
             path="/frota"
             element={
-              <ProtectedRoute allowedRoles={['EMPRESA']}>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
                 <div>Painel da Frota</div>
               </ProtectedRoute>
             }
@@ -54,7 +54,7 @@ describe('ProtectedRoute Component', () => {
   });
 
   it('deve permitir acesso quando usuário tem a role autorizada', () => {
-    useAuthStore.getState().login('jwt-valido', 'locadora@rentcars.com', 'EMPRESA');
+    useAuthStore.getState().login('jwt-valido', 'admin@apex.com', 'ADMIN');
 
     render(
       <MemoryRouter initialEntries={['/frota']}>
@@ -63,7 +63,7 @@ describe('ProtectedRoute Component', () => {
           <Route
             path="/frota"
             element={
-              <ProtectedRoute allowedRoles={['EMPRESA']}>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
                 <div>Painel da Frota Exclusivo</div>
               </ProtectedRoute>
             }

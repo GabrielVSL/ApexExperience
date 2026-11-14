@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-@DisplayName("Testes do Motor Financeiro ApexPay - Carteira, Fidelidade, Juros e Inadimplência")
+@DisplayName("Testes do Motor Financeiro ApexPay - Gateway Sandbox, Juros e Inadimplência")
 class ApexPayEngineTest {
 
     private UsuarioRepository usuarioRepository;
@@ -32,8 +32,8 @@ class ApexPayEngineTest {
     }
 
     @Test
-    @DisplayName("Deve creditar saldo e atualizar total depositado e tier de fidelidade")
-    void deveCreditarSaldoEAtualizarTier() {
+    @DisplayName("Deve creditar saldo no sandbox ApexPay sem aplicar tiers ou descontos artificiais")
+    void deveCreditarSaldoSemTierArtificial() {
         Cliente cliente = new Cliente();
         cliente.setEmail("piloto@apex.com");
         cliente.setSaldoCarteira(BigDecimal.ZERO);
@@ -42,35 +42,32 @@ class ApexPayEngineTest {
         when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(cliente));
         when(transacaoRepository.save(any(TransacaoApexPay.class))).thenAnswer(i -> i.getArgument(0));
 
-        // 1. Depósito de R$ 12.000 -> Deve subir para SILVER (5% desconto)
         facade.depositar("piloto@apex.com", new BigDecimal("12000.00"), "Depósito Inicial");
         assertEquals(new BigDecimal("12000.00"), cliente.getSaldoCarteira());
-        assertEquals("SILVER", cliente.getTierFidelidade());
-        assertEquals(new BigDecimal("0.05"), cliente.getFatorDesconto());
+        assertEquals("CONTA_VERIFICADA", cliente.getTierFidelidade());
+        assertEquals(BigDecimal.ZERO, cliente.getFatorDesconto());
 
-        // 2. Depósito adicional de R$ 40.000 (total R$ 52.000) -> Deve subir para APEX_BLACK (15% desconto)
-        facade.depositar("piloto@apex.com", new BigDecimal("40000.00"), "Upgrade Black");
+        facade.depositar("piloto@apex.com", new BigDecimal("40000.00"), "Recarga Adicional");
         assertEquals(new BigDecimal("52000.00"), cliente.getSaldoCarteira());
-        assertEquals("APEX_BLACK", cliente.getTierFidelidade());
-        assertEquals(new BigDecimal("0.15"), cliente.getFatorDesconto());
+        assertEquals("CONTA_VERIFICADA", cliente.getTierFidelidade());
+        assertEquals(BigDecimal.ZERO, cliente.getFatorDesconto());
     }
 
     @Test
-    @DisplayName("Deve aplicar desconto de fidelidade no débito da reserva")
-    void deveAplicarDescontoNoDebito() {
+    @DisplayName("Deve debitar o valor integral da reserva sem desconto de fidelidade")
+    void deveDebitarValorIntegralSemDesconto() {
         Cliente cliente = new Cliente();
-        cliente.setEmail("vip@apex.com");
+        cliente.setEmail("piloto@apex.com");
         cliente.setSaldoCarteira(new BigDecimal("20000.00"));
-        cliente.setTotalDepositadoHistorico(new BigDecimal("60000.00")); // APEX_BLACK (15% de desconto)
+        cliente.setTotalDepositadoHistorico(new BigDecimal("60000.00"));
 
-        when(usuarioRepository.findByEmail("vip@apex.com")).thenReturn(Optional.of(cliente));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(cliente));
         when(transacaoRepository.save(any(TransacaoApexPay.class))).thenAnswer(i -> i.getArgument(0));
 
-        // Reserva no valor de R$ 10.000,00 com 15% de desconto -> Deve debitar R$ 8.500,00
-        TransacaoApexPay transacao = facade.debitarReserva("vip@apex.com", new BigDecimal("10000.00"), "APX-TEST-001", "Reserva Spa");
+        TransacaoApexPay transacao = facade.debitarReserva("piloto@apex.com", new BigDecimal("10000.00"), "APX-TEST-001", "Reserva Spa");
 
-        assertEquals(new BigDecimal("8500.00"), transacao.getValor());
-        assertEquals(new BigDecimal("11500.00"), cliente.getSaldoCarteira());
+        assertEquals(new BigDecimal("10000.00"), transacao.getValor());
+        assertEquals(new BigDecimal("10000.00"), cliente.getSaldoCarteira());
     }
 
     @Test

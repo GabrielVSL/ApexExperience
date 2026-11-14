@@ -66,7 +66,7 @@ export default function HomeLayout() {
         {/* 5. Como Funciona a Experiência (Regras Arrive & Drive) */}
         <ComoFuncionaSection />
 
-        {/* 6. Seção ApexPay (Cartão 3D, Tiers & Crédito de Pista) - Exclusiva para Pilotos/Clientes */}
+        {/* 6. Seção ApexPay (Gateway Sandbox, Pix Fictício & Fatura Pós-Paga) - Exclusiva para Pilotos/Clientes */}
         {showApexPay && <ApexPaySection />}
       </main>
 

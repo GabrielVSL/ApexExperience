@@ -84,12 +84,26 @@ public class ReservaQueueEngine {
 
         try {
             Pedido pedido = new Pedido();
-            Automovel auto = new Automovel();
-            auto.setId(msg.getAutomovelId());
-            pedido.setAutomovel(auto);
+            if (msg.getAutomovelId() != null) {
+                Automovel auto = new Automovel();
+                auto.setId(msg.getAutomovelId());
+                pedido.setAutomovel(auto);
+            }
             pedido.setTipoServico(msg.getTipoServico());
             pedido.setDataInicio(msg.getDataInicio());
             pedido.setDataFim(msg.getDataFim());
+            if (msg.getFormaPagamento() != null && !msg.getFormaPagamento().isBlank()) {
+                pedido.setFormaPagamento(msg.getFormaPagamento());
+            }
+            if (msg.getValorTotal() != null) {
+                pedido.setValorTotal(msg.getValorTotal());
+            }
+            if (msg.getCnhInformada() != null) {
+                pedido.setCnhInformada(msg.getCnhInformada());
+            }
+            if (msg.getDataNascimentoInformada() != null) {
+                pedido.setDataNascimentoInformada(msg.getDataNascimentoInformada());
+            }
 
             if (msg.getSlotId() != null) {
                 TrackSlot slot = new TrackSlot();
@@ -122,6 +136,44 @@ public class ReservaQueueEngine {
                         dlqName, msg.getTrackingId(), msg.getMotivoFalha());
             }
         }
+    }
+
+    /**
+     * Registra uma reserva concluída no fluxo síncrono para manter as métricas de monitoramento atualizadas.
+     */
+    public void registrarSucessoSincrono(Pedido pedido) {
+        totalEnfileiradas.incrementAndGet();
+        totalSucessos.incrementAndGet();
+        LOG.info("✅ [Apex Telemetry] Sessão síncrona registrada com sucesso: {}",
+                pedido != null ? pedido.getTrackingCode() : "N/A");
+    }
+
+    /**
+     * Registra uma falha de reserva síncrona (validação, saldo ou concorrência) na Dead Letter Queue de auditoria.
+     */
+    public void registrarFalhaSincrona(Pedido pedidoTentado, String emailCliente, String motivoErro) {
+        totalEnfileiradas.incrementAndGet();
+        totalFalhas.incrementAndGet();
+        totalDlq.incrementAndGet();
+
+        String trackingId = (pedidoTentado != null && pedidoTentado.getTrackingCode() != null && !pedidoTentado.getTrackingCode().isBlank())
+                ? pedidoTentado.getTrackingCode()
+                : "APX-ERR-" + System.currentTimeMillis();
+
+        ReservaMensagem registro = new ReservaMensagem(
+                trackingId,
+                emailCliente,
+                pedidoTentado != null && pedidoTentado.getAutomovel() != null ? pedidoTentado.getAutomovel().getId() : null,
+                pedidoTentado != null ? pedidoTentado.getTipoServico() : null,
+                pedidoTentado != null && pedidoTentado.getTrackSlot() != null ? pedidoTentado.getTrackSlot().getId() : null,
+                pedidoTentado != null ? pedidoTentado.getDataInicio() : null,
+                pedidoTentado != null ? pedidoTentado.getDataFim() : null
+        );
+        registro.setTentativas(1);
+        registro.setStatus("DLQ");
+        registro.setMotivoFalha(motivoErro);
+        deadLetterQueue.add(registro);
+        LOG.warn("🚨 [Apex DLQ] Falha síncrona registrada ({}): {} | Causa: {}", dlqName, trackingId, motivoErro);
     }
 
     public Map<String, Object> getMetricas() {

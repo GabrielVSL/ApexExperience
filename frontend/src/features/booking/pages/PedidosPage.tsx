@@ -17,16 +17,22 @@ import {
   Send,
   Flag,
   RefreshCw,
+  QrCode,
+  ScanLine,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { toast } from '@/store/useToastStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useCurrencyStore } from '@/store/useCurrencyStore';
 import { resolveStudioCarImage } from '@/lib/carPresentation';
+import { FiaQrPassModal, PitlaneQrValidatorModal } from '@/features/booking/components/FiaQrPassModal';
 
 interface Pedido {
   id: number;
   trackingCode?: string;
+  qrCodePayload?: string;
+  qrCodeAssinatura?: string;
+  checkInRealizadoEm?: string | null;
   tipoServico?: 'VISITA_BOX' | 'FAST_LAP' | 'TRACK_EXPERIENCE' | 'PACOTE_VIP' | string;
   circuitoId?: string;
   circuitoNome?: string;
@@ -34,16 +40,33 @@ interface Pedido {
     id: number;
     data: string;
     turno: string;
+    circuito?: { id: string; nome: string };
   } | null;
   cliente: { nome: string; email: string; cpf?: string; profissao?: string };
-  automovel?: { marca: string; modelo: string; placa: string; matricula: string; imageUrl?: string } | null;
+  automovel?: {
+    marca: string;
+    modelo: string;
+    placa: string;
+    matricula: string;
+    imageUrl?: string;
+    circuito?: { id: string; nome: string };
+  } | null;
   dataInicio: string;
   dataFim: string;
   valorTotal?: number;
   valorFinal?: number;
   valorSinistro?: number;
-  status: 'PENDENTE_EMPRESA' | 'PENDENTE_BANCO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
+  status: 'AGUARDANDO_APROVACAO' | 'PENDENTE_EMPRESA' | 'PENDENTE_BANCO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
   dataPedido: string;
+}
+
+interface TrackSlotOption {
+  id: number;
+  data: string;
+  turno: string;
+  vagasTotais: number;
+  vagasOcupadas: number;
+  taxaAdicionalTurno?: number;
 }
 
 type StatusFilter = 'TODOS' | 'PENDENTES' | 'APROVADO' | 'REJEITADO' | 'CANCELADO';
@@ -57,15 +80,12 @@ const SERVICE_LABEL: Record<string, string> = {
 
 const getStatusBadge = (status: Pedido['status']) => {
   switch (status) {
+    case 'AGUARDANDO_APROVACAO':
     case 'PENDENTE_EMPRESA':
-      return {
-        label: 'PENDENTE EMPRESA',
-        cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-      };
     case 'PENDENTE_BANCO':
       return {
-        label: 'AUDITORIA BANCO',
-        cls: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+        label: 'AGUARDANDO HOMOLOGAÇÃO',
+        cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
       };
     case 'REVISAO_CLIENTE':
       return {
@@ -98,10 +118,16 @@ export default function PedidosPage() {
   const [filter, setFilter] = useState<StatusFilter>('TODOS');
   const [pedidoSelecionado, setPedidoSelecionado] = useState<Pedido | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [syncingQr, setSyncingQr] = useState(false);
+  const [isValidatorOpen, setIsValidatorOpen] = useState(false);
+  const [qrModalPedido, setQrModalPedido] = useState<Pedido | null>(null);
 
-  // Estados para o Modo de Edição (Contraproposta)
+  // Estados para o Modo de Edição (Contraproposta + TrackSlot)
   const [isEditing, setIsEditing] = useState(false);
   const [editDates, setEditDates] = useState({ start: '', end: '' });
+  const [availableSlots, setAvailableSlots] = useState<TrackSlotOption[]>([]);
+  const [editSlotId, setEditSlotId] = useState<number | null>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const fetchPedidos = async () => {
     try {
@@ -126,23 +152,52 @@ export default function PedidosPage() {
         start: pedidoSelecionado.dataInicio ? new Date(pedidoSelecionado.dataInicio).toISOString().slice(0, 16) : '',
         end: pedidoSelecionado.dataFim ? new Date(pedidoSelecionado.dataFim).toISOString().slice(0, 16) : '',
       });
+      setEditSlotId(pedidoSelecionado.trackSlot?.id ?? null);
+      setAvailableSlots([]);
       setIsEditing(false);
     }
   }, [pedidoSelecionado]);
+
+  useEffect(() => {
+    if (!isEditing || !pedidoSelecionado) return;
+    const circuitId =
+      pedidoSelecionado.trackSlot?.circuito?.id ||
+      pedidoSelecionado.circuitoId ||
+      pedidoSelecionado.automovel?.circuito?.id ||
+      'interlagos';
+
+    setLoadingSlots(true);
+    api
+      .get(`/api/slots/${circuitId}`)
+      .then((res) => {
+        setAvailableSlots(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch(() => setAvailableSlots([]))
+      .finally(() => setLoadingSlots(false));
+  }, [isEditing, pedidoSelecionado]);
+
+  const handleSelectEditSlot = (slot: TrackSlotOption) => {
+    setEditSlotId(slot.id);
+    const turno = (slot.turno || 'MANHA').toUpperCase();
+    const startH = turno === 'TARDE' ? '13:00' : turno === 'NOTURNO' ? '19:00' : '08:00';
+    const endH = turno === 'TARDE' ? '17:00' : turno === 'NOTURNO' ? '22:00' : '12:00';
+    setEditDates({
+      start: `${slot.data}T${startH}`,
+      end: `${slot.data}T${endH}`,
+    });
+  };
 
   const handleDecisao = async (id: number, novoStatus: 'APROVADO' | 'REJEITADO') => {
     try {
       setIsProcessing(true);
       const response = await api.put(`/api/pedidos/${id}/avaliar?status=${novoStatus}`);
       const statusFinal: Pedido['status'] =
-        response.data?.status || (novoStatus === 'APROVADO' ? 'PENDENTE_BANCO' : 'REJEITADO');
+        response.data?.status || (novoStatus === 'APROVADO' ? 'APROVADO' : 'REJEITADO');
       atualizarEstadoLocal(id, statusFinal);
-      if (statusFinal === 'PENDENTE_BANCO') {
-        toast.success('Sessão aprovada pela Empresa! Encaminhada para auditoria do Banco.');
-      } else if (statusFinal === 'APROVADO') {
-        toast.success('Sessão aprovada com sucesso!');
+      if (statusFinal === 'APROVADO') {
+        toast.success('Sessão homologada com sucesso!');
       } else {
-        toast.success('Sessão rejeitada.');
+        toast.success('Sessão rejeitada e vaga liberada.');
       }
     } catch (error: any) {
       const msg = error.response?.data?.message || 'Erro ao processar decisão.';
@@ -159,26 +214,44 @@ export default function PedidosPage() {
       const payload = {
         dataInicio: editDates.start.length === 16 ? `${editDates.start}:00` : editDates.start,
         dataFim: editDates.end.length === 16 ? `${editDates.end}:00` : editDates.end,
+        trackSlot: editSlotId ? { id: editSlotId } : undefined,
       };
 
-      await api.put(`/api/pedidos/${pedidoSelecionado.id}/modificar`, payload);
+      const res = await api.put(`/api/pedidos/${pedidoSelecionado.id}/modificar`, payload);
+      const updated = res.data;
 
       setPedidos((prev) =>
         prev.map((p) =>
           p.id === pedidoSelecionado.id
-            ? { ...p, status: 'REVISAO_CLIENTE', dataInicio: payload.dataInicio, dataFim: payload.dataFim }
+            ? {
+                ...p,
+                status: 'REVISAO_CLIENTE',
+                dataInicio: updated?.dataInicio || payload.dataInicio,
+                dataFim: updated?.dataFim || payload.dataFim,
+                valorTotal: updated?.valorTotal ?? p.valorTotal,
+                valorFinal: updated?.valorFinal ?? p.valorFinal,
+                trackSlot: updated?.trackSlot ?? p.trackSlot,
+              }
             : p
         )
       );
       setPedidoSelecionado((prev) =>
         prev
-          ? { ...prev, status: 'REVISAO_CLIENTE', dataInicio: payload.dataInicio, dataFim: payload.dataFim }
+          ? {
+              ...prev,
+              status: 'REVISAO_CLIENTE',
+              dataInicio: updated?.dataInicio || payload.dataInicio,
+              dataFim: updated?.dataFim || payload.dataFim,
+              valorTotal: updated?.valorTotal ?? prev.valorTotal,
+              valorFinal: updated?.valorFinal ?? prev.valorFinal,
+              trackSlot: updated?.trackSlot ?? prev.trackSlot,
+            }
           : null
       );
       setIsEditing(false);
-      toast.success('Contraproposta enviada ao piloto com sucesso!');
-    } catch {
-      toast.error('Erro ao enviar contraproposta.');
+      toast.success('Contraproposta de slot/horário enviada ao piloto!');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Erro ao enviar contraproposta.');
     } finally {
       setIsProcessing(false);
     }
@@ -191,10 +264,31 @@ export default function PedidosPage() {
     }
   };
 
+  const handleSyncQrCodes = async () => {
+    try {
+      setSyncingQr(true);
+      const res = await api.post('/api/pedidos/qrcode/task');
+      const rel = res.data || {};
+      toast.success(
+        `Task concluída: ${rel.qrCodesGeradosOuAtualizados ?? 0} QR Codes gerados/atualizados (${rel.totalSessoes ?? 0} sessões).`
+      );
+      await fetchPedidos();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Erro ao executar task de geração de QR Codes.');
+    } finally {
+      setSyncingQr(false);
+    }
+  };
+
   const pedidosFiltrados = pedidos.filter((p) => {
     if (filter === 'TODOS') return true;
     if (filter === 'PENDENTES') {
-      return p.status === 'PENDENTE_EMPRESA' || p.status === 'PENDENTE_BANCO' || p.status === 'REVISAO_CLIENTE';
+      return (
+        p.status === 'AGUARDANDO_APROVACAO' ||
+        p.status === 'PENDENTE_EMPRESA' ||
+        p.status === 'PENDENTE_BANCO' ||
+        p.status === 'REVISAO_CLIENTE'
+      );
     }
     return p.status === filter;
   });
@@ -238,6 +332,25 @@ export default function PedidosPage() {
                 {f.label}
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={() => setIsValidatorOpen(true)}
+              className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-medium text-white transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <ScanLine size={14} className="text-[#FF1717]" />
+              <span>Validador QR / Check-in Box</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncQrCodes}
+              disabled={syncingQr}
+              className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-medium text-white/85 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {syncingQr ? <Loader2 size={14} className="animate-spin text-[#FF1717]" /> : <QrCode size={14} className="text-emerald-400" />}
+              <span>Sincronizar QR Codes</span>
+            </button>
 
             <button
               type="button"
@@ -433,6 +546,15 @@ export default function PedidosPage() {
                       {formatPrice(pedidoSelecionado.valorFinal ?? pedidoSelecionado.valorTotal ?? 0)}
                     </span>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrModalPedido(pedidoSelecionado)}
+                    className="mt-4 w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-[#FF1717]/40 text-xs font-medium text-white flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <QrCode size={15} className="text-[#FF1717]" />
+                    <span>Ver Credencial QR Code (HMAC-SHA256)</span>
+                  </button>
                 </div>
 
                 <div className="bg-[#11131A] rounded-2xl p-5 border border-white/[0.08]">
@@ -467,19 +589,57 @@ export default function PedidosPage() {
                       Janela da Sessão
                     </p>
                     {!isEditing &&
-                      pedidoSelecionado.status === 'PENDENTE_EMPRESA' &&
-                      (user?.role === 'EMPRESA' || user?.role === 'ADMIN') && (
+                      ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
+                        pedidoSelecionado.status
+                      ) &&
+                      user?.role === 'ADMIN' && (
                         <button
                           type="button"
                           onClick={() => setIsEditing(true)}
                           className="text-xs font-medium text-[#FF1717] hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                         >
-                          <Edit3 size={12} /> Sugerir Novo Horário
+                          <Edit3 size={12} /> Propor Novo Slot / Horário
                         </button>
                       )}
                   </div>
 
                   <div className="space-y-4">
+                    {isEditing && (
+                      <div>
+                        <label className="text-[11px] text-amber-200/80 mb-1.5 block font-mono uppercase tracking-wider">
+                          Trocar Slot no Autódromo (Opcional)
+                        </label>
+                        {loadingSlots ? (
+                          <div className="flex items-center gap-2 text-xs text-white/50 py-2">
+                            <Loader2 size={13} className="animate-spin" /> Carregando turnos disponíveis...
+                          </div>
+                        ) : availableSlots.length === 0 ? (
+                          <p className="text-[11px] text-white/50">
+                            Nenhum turno pré-gerado encontrado; ajuste as datas manualmente abaixo.
+                          </p>
+                        ) : (
+                          <select
+                            value={editSlotId ?? ''}
+                            onChange={(e) => {
+                              const id = Number(e.target.value);
+                              const chosen = availableSlots.find((s) => s.id === id);
+                              if (chosen) handleSelectEditSlot(chosen);
+                            }}
+                            className="w-full bg-[#08090C] border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-white focus:border-[#FF1717] outline-none font-mono"
+                          >
+                            <option value="">Manter janela manual</option>
+                            {availableSlots.map((slot) => {
+                              const livres = slot.vagasTotais - slot.vagasOcupadas;
+                              return (
+                                <option key={slot.id} value={slot.id} disabled={livres <= 0 && slot.id !== pedidoSelecionado.trackSlot?.id}>
+                                  {slot.data.split('-').reverse().join('/')} · {slot.turno} ({livres} vagas livres)
+                                </option>
+                              );
+                            })}
+                          </select>
+                        )}
+                      </div>
+                    )}
                     <div>
                       <label className="text-[11px] text-white/50 mb-1 block">Início da Sessão</label>
                       {isEditing ? (
@@ -546,8 +706,10 @@ export default function PedidosPage() {
                       )}
                     </button>
                   </div>
-                ) : pedidoSelecionado.status === 'PENDENTE_EMPRESA' ? (
-                  user?.role === 'EMPRESA' || user?.role === 'ADMIN' ? (
+                ) : ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
+                    pedidoSelecionado.status
+                  ) ? (
+                  user?.role === 'ADMIN' ? (
                     <div className="flex gap-3">
                       <button
                         type="button"
@@ -568,47 +730,14 @@ export default function PedidosPage() {
                           <Loader2 className="animate-spin" size={15} />
                         ) : (
                           <>
-                            <CheckCircle2 size={15} />{' '}
-                            {user?.role === 'ADMIN' ? 'Aprovar Sessão' : 'Aprovar (Banco)'}
+                            <CheckCircle2 size={15} /> Aprovar Sessão
                           </>
                         )}
                       </button>
                     </div>
                   ) : (
                     <div className="w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
-                      <Clock size={15} /> Aguardando aprovação prévia da Empresa
-                    </div>
-                  )
-                ) : pedidoSelecionado.status === 'PENDENTE_BANCO' ? (
-                  user?.role === 'BANCO' || user?.role === 'ADMIN' ? (
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={() => handleDecisao(pedidoSelecionado.id, 'REJEITADO')}
-                        disabled={isProcessing}
-                        className="flex-1 py-3 px-4 rounded-full text-xs font-medium text-rose-300 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <XCircle size={15} />
-                        <span>Reprovar</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDecisao(pedidoSelecionado.id, 'APROVADO')}
-                        disabled={isProcessing}
-                        className="flex-[2] py-3 px-4 rounded-full text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {isProcessing ? (
-                          <Loader2 className="animate-spin" size={15} />
-                        ) : (
-                          <>
-                            <CheckCircle2 size={15} /> Liberar Crédito &amp; Aprovar
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-medium">
-                      <Clock size={15} /> Aprovado pela Empresa · Em Auditoria no Banco
+                      <Clock size={15} /> Aguardando homologação do Race Control
                     </div>
                   )
                 ) : (
@@ -640,6 +769,31 @@ export default function PedidosPage() {
           </>
         )}
       </AnimatePresence>
+
+      {qrModalPedido && (
+        <FiaQrPassModal
+          isOpen={Boolean(qrModalPedido)}
+          onClose={() => setQrModalPedido(null)}
+          pedidoId={qrModalPedido.id}
+          initialTrackingCode={qrModalPedido.trackingCode}
+          initialPayload={qrModalPedido.qrCodePayload}
+          initialAssinatura={qrModalPedido.qrCodeAssinatura}
+          initialCheckInEm={qrModalPedido.checkInRealizadoEm}
+          isAdmin
+          onCheckInCompleted={(id, checkInEm) => {
+            setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, checkInRealizadoEm: checkInEm } : p)));
+            if (pedidoSelecionado?.id === id) {
+              setPedidoSelecionado((prev) => (prev ? { ...prev, checkInRealizadoEm: checkInEm } : null));
+            }
+          }}
+        />
+      )}
+
+      <PitlaneQrValidatorModal
+        isOpen={isValidatorOpen}
+        onClose={() => setIsValidatorOpen(false)}
+        onValidated={fetchPedidos}
+      />
     </div>
   );
 }

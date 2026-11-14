@@ -1,115 +1,113 @@
-# 🚀 Guia de Deploy em Produção (100% Gratuito & Alta Performance)
+# 🚀 Guia de Deploy em Produção (Vercel + Koyeb + Supabase)
 
-Este documento descreve as opções recomendadas para publicar o ecossistema **Apex Track Experience & ApexPay** (Backend Micronaut Java 21, Frontend React + Vite e Banco PostgreSQL).
+Este guia descreve o passo a passo exato para publicar o ecossistema **Apex Track Experience & ApexPay** em produção de forma gratuita utilizando **Vercel** (Frontend), **Koyeb** (Backend Micronaut Java 21 em Docker) e **Supabase** (PostgreSQL).
 
 ---
 
-## 🏗️ Arquitetura Recomendada (Foco em Currículo / Portfólio)
-
-A stack recomendada demonstra versatilidade em **Edge Delivery**, **Containerização Docker** e **BaaS Corporativo**:
+## 🏗️ Arquitetura de Produção
 
 ```
-[ Frontend: Vercel (Edge CDN) ]
+[ Frontend: Vercel (Edge CDN + Vite SPA) ]
              │
-             ▼ (HTTPS / REST)
-[ Backend: Koyeb ou Render (Docker Multi-Stage / JRE 21 Alpine) ]
+             ▼ (HTTPS / REST + JWT Bearer)
+[ Backend: Koyeb (Docker Multi-Stage / JRE 21 Alpine + Virtual Threads) ]
              │
-             ▼ (JDBC com SSL / Connection Pooler)
-[ Banco de Dados: Supabase ou Neon (PostgreSQL 15+) ]
+             ▼ (JDBC SSL + Transaction Pooler Supavisor)
+[ Banco de Dados: Supabase (PostgreSQL 15+) ]
 ```
 
-### Por que esta composição?
-- **Frontend na Vercel**: Líder da indústria para SPAs React, com deploy contínuo via Git, SSL automático e CDN global.
-- **Backend via Docker no Koyeb**: Inicialização instantânea, roteamento global de borda e menor latência de *cold start* em relação ao Render tradicional.
-- **PostgreSQL no Supabase**: Ferramenta corporativa de BaaS com pool de conexões (*Supavisor*), backups automáticos e explorador visual de dados.
+### Por que essa composição?
+- **Frontend na Vercel:** Deploy contínuo por push, CDN global e `frontend/vercel.json` já configurado para reescrever rotas SPA (`/(.*) -> /index.html`).
+- **Backend no Koyeb:** Roda o `backend/Dockerfile` diretamente sobre **Java 21 JRE Alpine** com flags otimizadas para containers de **512 MB** (`-XX:MaxRAMPercentage=75 -XX:+UseSerialGC`) e **Virtual Threads** na fila de reservas (`ReservaQueueEngine`).
+- **PostgreSQL no Supabase:** Banco gerenciado gratuito com Connection Pooler (**Supavisor**) compatível com IPv4 dos containers da Koyeb.
 
 ---
 
-## 🗄️ Etapa 1: Banco de Dados (Supabase ou Neon)
+## 🗄️ Etapa 1: Banco de Dados (Supabase)
 
-### Opção A: Supabase (Recomendado)
-1. Acesse [supabase.com](https://supabase.com) e crie uma conta gratuita.
-2. Crie um novo projeto (ex: `rentcars-production`) e defina uma senha forte.
-3. No painel do projeto, vá em **Project Settings** → **Database**.
-4. Na seção **Connection String**, selecione a aba **JDBC** (ou Connection Pooling via porta `6543`).
-5. A URL terá o formato:
+1. Acesse [supabase.com](https://supabase.com) e crie um novo projeto (ex: `apex-rentcars-prod`).
+2. Guarde a senha do banco definida na criação.
+3. No painel do projeto, clique em **Connect** (topo da tela) → aba **Connection String** → selecione **Transaction pooler** (porta `6543`).
+   > **Importante:** O container gratuito da Koyeb utiliza rede **IPv4**, portanto use sempre o **Transaction Pooler (porta `6543`)** e não a conexão direta na porta `5432` (que no plano gratuito do Supabase pode exigir IPv6).
+4. Monte a URL JDBC **exatamente** com `?sslmode=require&prepareThreshold=0`:
+   ```text
+   jdbc:postgresql://aws-0-[regiao].pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
    ```
-   jdbc:postgresql://aws-0-[regiao].pooler.supabase.com:6543/postgres?sslmode=require
-   ```
-
-### Opção B: Neon.tech (Alternativa Serverless)
-1. Acesse [neon.tech](https://neon.tech) e crie um projeto.
-2. Copie a connection string JDBC fornecida no Dashboard:
-   ```
-   jdbc:postgresql://ep-[id].[regiao].aws.neon.tech/neondb?sslmode=require
-   ```
+   - O parâmetro **`prepareThreshold=0`** é obrigatório ao usar Hibernate/JPA com o Transaction Pooler do Supabase (`6543`) para evitar o erro `prepared statement "S_1" already exists`.
+   - Atenção ao **usuário (`DB_USER`)**: no Transaction Pooler do Supabase, o usuário inclui o ID do projeto no formato `postgres.[project-ref]` (copie o valor exato exibido no modal *Connect* do Supabase).
 
 ---
 
-## ⚙️ Etapa 2: Backend (Koyeb ou Render)
+## ⚙️ Etapa 2: Backend (Koyeb com Docker)
 
-O repositório já inclui um **Dockerfile Multi-Stage** otimizado em `backend/Dockerfile` que gera um container Alpine leve (~140MB) com flags de baixa alocação de memória para planos gratuitos.
+O repositório possui o arquivo `backend/Dockerfile` (multi-stage build com JDK/JRE 21) e `backend/src/main/resources/application.properties` já pré-configurados com driver e dialeto do PostgreSQL.
 
-### Opção A: Koyeb (Recomendado)
-1. Acesse [koyeb.com](https://www.koyeb.com) e conecte sua conta do GitHub.
-2. Clique em **Create App** e selecione o repositório do projeto.
-3. Na seção de configuração:
-   - **Work Directory**: `backend`
-   - **Builder**: Selecione `Dockerfile` (ele detectará `backend/Dockerfile`).
-4. Em **Environment Variables**, adicione:
-   | Variável | Descrição / Exemplo |
-   | :--- | :--- |
-   | `PORT` | `8080` |
-   | `JDBC_URL` | Sua URL JDBC do Supabase ou Neon com `?sslmode=require` |
-   | `DB_USER` | Usuário do banco (ex: `postgres` no Supabase) |
-   | `DB_PASSWORD` | Senha configurada no banco |
-   | `JWT_SECRET` | Chave de 256 bits (ex: string aleatória de 32+ caracteres) |
-   | `CORS_ALLOWED_ORIGINS` | `https://*.vercel.app,http://localhost:5173` |
-5. Clique em **Deploy**. Ao finalizar, anote a URL pública gerada (ex: `https://seu-app.koyeb.app`).
+1. Acesse [koyeb.com](https://www.koyeb.com) e conecte sua conta GitHub.
+2. Clique em **Create Web Service** → **GitHub** e selecione este repositório.
+3. Em **Builder & Deployment**:
+   - **Builder:** `Dockerfile`
+   - **Work Directory (Docker Build Context):** `backend`
+   - **Dockerfile location:** `Dockerfile` (ou `backend/Dockerfile` conforme o seletor da tela; mantenha o context apontando para `backend`)
+   - **Instance:** `Free / Eco` (512 MB RAM)
+4. Em **Exposed Ports & Health Check**:
+   - **Port:** `8080` (Protocol: `HTTP`)
+   - **Health Check:** Protocol `HTTP`, Path `/api/health`, Port `8080`, Grace Period `60` segundos (tempo para a primeira criação de tabelas do Hibernate e carga inicial do `DataInitializer`).
+5. Em **Environment Variables**, configure:
 
-### Opção B: Render
-1. Acesse [render.com](https://render.com) e crie um **New Web Service**.
-2. Conecte o repositório e configure:
-   - **Root Directory**: `backend`
-   - **Runtime**: `Docker`
-   - **Dockerfile Path**: `Dockerfile`
-3. Configure as mesmas variáveis de ambiente listadas na tabela acima.
-4. Conclua o deploy e copie a URL (ex: `https://seu-app.onrender.com`).
+| Variável | Obrigatória | Valor / Exemplo |
+| :--- | :---: | :--- |
+| `PORT` | Sim | `8080` |
+| `JDBC_URL` | Sim | `jdbc:postgresql://aws-0-[regiao].pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0` |
+| `DB_USER` | Sim | `postgres.[project-ref]` (fornecido no Pooler do Supabase) |
+| `DB_PASSWORD` | Sim | Senha do banco configurada no Supabase |
+| `JWT_SECRET` | Sim | String secreta forte (mínimo 32 caracteres). *Também assina os QR Codes HMAC-SHA256 das sessões.* |
+| `CORS_ALLOWED_ORIGINS_REGEX` | Opcional | Padrão já aceita `localhost`, `*.vercel.app`, `*.koyeb.app`, `*.onrender.com`, `*.netlify.app`, `*.railway.app`. Defina apenas se usar domínio próprio (ex: `^https://(www\.)?seudominio\.com$`). |
+| `WHATSAPP_TOKEN` | Opcional | Token da **WhatsApp Cloud API (Meta)** para envio real de OTP e passe em produção. |
+| `WHATSAPP_PHONE_NUMBER_ID` | Opcional | ID do número na Meta Cloud API. |
+| `WHATSAPP_SERVICE_URL` | Opcional | URL pública caso suba o microserviço `whatsapp-service` separado (não necessário se usar a Meta Cloud API). |
+
+6. Clique em **Deploy** e aguarde o status ficar **Healthy**. Copie a URL pública gerada (ex: `https://apex-backend-seuuser.koyeb.app`).
 
 ---
 
 ## 💻 Etapa 3: Frontend (Vercel)
 
-O repositório já possui o arquivo `frontend/vercel.json` configurado para reescrever rotas SPA para o `index.html`.
+O diretório `frontend` já contém o [vercel.json](frontend/vercel.json) configurado com rewrites para evitar erro 404 nas rotas do React Router.
 
-1. Acesse [vercel.com](https://vercel.com) e conecte o repositório GitHub.
-2. Clique em **Import Project** e defina:
-   - **Root Directory**: Clique em *Edit* e selecione `frontend`.
-   - **Framework Preset**: `Vite` (detectado automaticamente).
-3. Na seção **Environment Variables**, adicione:
-   | Variável | Valor |
-   | :--- | :--- |
-   | `VITE_API_URL` | URL pública do backend gerada na Etapa 2 (sem barra no final) |
+1. Acesse [vercel.com](https://vercel.com) → **Add New → Project** e importe o repositório.
+2. Em **Configure Project**:
+   - **Root Directory:** clique em *Edit* e selecione `frontend`.
+   - **Framework Preset:** `Vite`.
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+3. Em **Environment Variables**, adicione:
+
+| Variável | Valor |
+| :--- | :--- |
+| `VITE_API_URL` | URL pública do backend no Koyeb **sem barra no final** (ex: `https://apex-backend-seuuser.koyeb.app`) |
+
 4. Clique em **Deploy**.
-5. Copie o domínio gerado na Vercel (ex: `https://rentcars-apex.vercel.app`).
-6. *(Opcional)*: Volte nas variáveis do Backend e adicione este domínio exato em `CORS_ALLOWED_ORIGINS`.
+5. Caso adicione um domínio customizado na Vercel posteriormente (diferente de `*.vercel.app`), adicione-o na regex da variável `CORS_ALLOWED_ORIGINS_REGEX` no Koyeb e faça redeploy do backend.
 
 ---
 
-## 🔒 Credenciais Padrão do Administrador
+## 🔒 Credenciais Padrão do Administrador (Race Control)
 
-Ao subir o backend pela primeira vez em um banco de dados novo, o `DataInitializer` criará o administrador executivo:
+No primeiro boot contra o banco Supabase vazio, o `DataInitializer` cria automaticamente os 8 circuitos, os 8 supercarros fixos da frota, os slots dos próximos 14 dias e a conta administrativa imutável:
 
-- **E-mail**: `admin@apex.com`
-- **Senha**: `123456`
-- **Painel**: `/admin` (liberado para aprovação de sessões, auditoria de crédito e telemetria de frotas).
+- **E-mail:** `admin@apex.com`
+- **Senha:** `123456`
+- **Painel:** `/admin` e `/pedidos` (a senha, o e-mail e o nome desta conta são protegidos contra alteração para manter a demonstração pública funcional).
 
 ---
 
 ## 🔍 Checklist de Validação Pós-Deploy
 
-- [ ] Acessar a URL do Frontend na Vercel e verificar se a Landing Page carrega sem erros de console.
-- [ ] Testar login com `admin@apex.com` / `123456`.
-- [ ] Recarregar a página (F5) em rotas internas (`/login`, `/admin`, `/pistas`) para confirmar que o `vercel.json` preveniu erro 404.
-- [ ] Criar um novo cadastro de piloto e verificar se a sessão foi registrada no banco PostgreSQL.
-- [ ] Acessar `/swagger-ui` na URL do backend para verificar a documentação interativa da API.
+- [ ] **Saúde Backend & Fila:** Acessar `https://seu-backend.koyeb.app/api/health` e confirmar `"status": "UP"`, `"database": { "status": "UP", "supercarrosFixos": 8 }`, `"virtualThreads": true` e `"bookingQueue": { "status": "ONLINE" }`.
+- [ ] **Swagger / OpenAPI:** Acessar `https://seu-backend.koyeb.app/swagger-ui` para confirmar a documentação da API online.
+- [ ] **SPA & Rotas Vercel:** Abrir a URL da Vercel, navegar para `/cars`, `/pistas` e `/login`, e pressionar **F5** para garantir que não ocorre erro `404` (`vercel.json`).
+- [ ] **Login Admin & Race Control:** Entrar com `admin@apex.com` / `123456` e validar o painel `/admin`.
+- [ ] **Fluxo Completo + Fila + QR Code Criptográfico:** Cadastrar um piloto, fazer uma recarga simulada no `/apexpay`, agendar uma sessão de pista e validar:
+  - Métricas da fila em `GET /api/pedidos/fila/metricas` (autenticado).
+  - Emissão do **QR Code FIA Paddock Pass (`HMAC-SHA256`)** em `/meus-alugueis` → *Credencial QR Code*.
+  - Validação e **Check-in no Pitlane** pelo Admin em `/pedidos` → *Validador QR / Check-in Box*.

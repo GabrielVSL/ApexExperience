@@ -7,7 +7,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   ShieldAlert,
-  Sparkles,
+  ShieldCheck,
   Loader2,
   CheckCircle2,
   KeyRound,
@@ -25,8 +25,6 @@ interface WalletSummary {
   totalDepositadoHistorico: number;
   statusFinanceiro: string;
   inadimplente: boolean;
-  tierFidelidade: string;
-  porcentagemDesconto: number;
 }
 
 interface TransactionItem {
@@ -37,13 +35,6 @@ interface TransactionItem {
   descricao: string;
   trackingReserva?: string;
 }
-
-const TIER_MILESTONES = [
-  { name: 'BRONZE', label: 'Bronze', threshold: 0, discount: '0%' },
-  { name: 'SILVER', label: 'Silver', threshold: 10000, discount: '5%' },
-  { name: 'GOLD', label: 'Gold', threshold: 25000, discount: '10%' },
-  { name: 'APEX_BLACK', label: 'Apex Black', threshold: 50000, discount: '15%' },
-];
 
 export default function ApexPayPage() {
   const { formatPrice } = useCurrencyStore();
@@ -128,10 +119,6 @@ export default function ApexPayPage() {
   }
 
   const totalDep = wallet?.totalDepositadoHistorico || 0;
-  const nextMilestone = TIER_MILESTONES.find((m) => totalDep < m.threshold) || null;
-  const progressPercent = nextMilestone
-    ? Math.min(100, Math.round((totalDep / nextMilestone.threshold) * 100))
-    : 100;
 
   return (
     <div className="min-h-screen bg-[#08090C] text-white pt-28 pb-24 px-4 sm:px-6 selection:bg-[#FF1717] selection:text-white">
@@ -140,13 +127,13 @@ export default function ApexPayPage() {
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
             <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[#FF1717] mb-2">
-              ApexPay · Carteira & Fidelidade de Pista
+              ApexPay · Gateway Financeiro Simulado (Sandbox)
             </p>
             <h1 className="text-3xl sm:text-5xl font-medium tracking-tight text-white">
               Minha Carteira ApexPay
             </h1>
             <p className="text-sm text-white/60 mt-2 max-w-2xl">
-              Gerencie seu saldo, acompanhe o nível de desconto automático por depósitos acumulados e valide sua CNH para liberar experiências de pilotagem.
+              Ambiente financeiro simulado para testar reservas de pista sem dinheiro real: faça recargas instantâneas fictícias, acompanhe faturas pós-pagas, estornos e valide sua CNH.
             </p>
           </div>
         </header>
@@ -214,27 +201,19 @@ export default function ApexPayPage() {
                 </p>
               </div>
 
-              {/* Barra de Progresso de Tier */}
-              <div className="pt-4 border-t border-white/10 space-y-2.5">
+              {/* Regras do Gateway Sandbox ApexPay */}
+              <div className="pt-4 border-t border-white/10 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-white/70 flex items-center gap-1.5">
-                    <Sparkles size={13} className="text-[#FF1717]" />
-                    Nível <strong className="text-white">{wallet?.tierFidelidade}</strong>
+                  <span className="text-white/75 flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    Status do Motor Sandbox
                   </span>
-                  <span className="font-mono text-[#FF1717] font-semibold">
-                    {wallet?.porcentagemDesconto || 0}% desconto ativo
+                  <span className="font-mono text-white/80 text-[11px]">
+                    {wallet?.statusFinanceiro || 'REGULAR'}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full bg-[#FF1717] rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-white/45 font-mono">
-                  {nextMilestone
-                    ? `Faltam ${formatPrice(nextMilestone.threshold - totalDep)} em depósitos para ${nextMilestone.label} (${nextMilestone.discount} off)`
-                    : 'Você atingiu o nível máximo Apex Black (15% off permanente)!'}
+                <p className="text-[11px] text-white/50 leading-relaxed">
+                  Reservas pagas com Saldo Sandbox têm aprovação imediata (Green Flag). Faturas pós-pagas passam por homologação do Race Control; débitos em atraso sofrem 0,1%/dia de juros.
                 </p>
               </div>
             </div>

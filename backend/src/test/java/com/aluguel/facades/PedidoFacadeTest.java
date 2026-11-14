@@ -54,15 +54,15 @@ class PedidoFacadeTest {
     }
 
     @Test
-    @DisplayName("Deve criar pedido calculando valor total com sucesso e status PENDENTE_EMPRESA")
+    @DisplayName("Deve criar pedido calculando valor total com sucesso e status AGUARDANDO_APROVACAO")
     void deveCriarPedidoComSucesso() {
-        Agente empresa = new Agente();
-        empresa.setEmail("empresa@rentcars.com");
+        Agente admin = new Agente();
+        admin.setEmail("admin@apex.com");
 
         Automovel automovel = new Automovel();
         automovel.setId(10L);
         automovel.setPrecoPorDia(new BigDecimal("150.00"));
-        automovel.setProprietario(empresa);
+        automovel.setProprietario(admin);
 
         Cliente cliente = new Cliente();
         cliente.setId(1L);
@@ -85,7 +85,7 @@ class PedidoFacadeTest {
         Pedido criado = pedidoFacade.criarPedido(pedidoInput, "cliente@rentcars.com");
 
         assertNotNull(criado);
-        assertEquals("PENDENTE_EMPRESA", criado.getStatus());
+        assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
         assertEquals(automovel, criado.getAutomovel());
         assertEquals(cliente, criado.getCliente());
         // 3 diárias * 150 = 450.00
@@ -153,107 +153,113 @@ class PedidoFacadeTest {
     }
 
     @Test
-    @DisplayName("Empresa deve aprovar pedido movendo status de PENDENTE_EMPRESA para PENDENTE_BANCO")
-    void deveEmpresaAprovarPedido() {
-        Agente empresa = new Agente();
-        empresa.setEmail("proprietaria@rentcars.com");
-        empresa.setRole("ROLE_EMPRESA");
+    @DisplayName("Admin (Race Control) deve aprovar pedido pendente em 1 etapa e efetivar fatura pós-paga no aceite")
+    void deveAdminAprovarPedidoFaturaEDebitarNoAceite() {
+        TrackSlotRepository slotRepo = mock(TrackSlotRepository.class);
+        ApexPayFacade apexMock = mock(ApexPayFacade.class);
+        PedidoFacade facadeComApex = new PedidoFacade(pedidoRepository, automovelRepository, usuarioRepository, slotRepo, apexMock);
+
+        Agente admin = new Agente();
+        admin.setEmail("admin@apex.com");
+        admin.setRole("ROLE_ADMIN");
+
+        Cliente piloto = new Cliente();
+        piloto.setEmail("piloto@apex.com");
+        piloto.setStatusFinanceiro("REGULAR");
 
         Automovel automovel = new Automovel();
         automovel.setId(10L);
-        automovel.setProprietario(empresa);
+        automovel.setPrecoPorDia(new BigDecimal("1000.00"));
+        automovel.setProprietario(admin);
 
         Pedido pedido = new Pedido();
         pedido.setId(100L);
-        pedido.setStatus("PENDENTE_EMPRESA");
+        pedido.setTrackingCode("APX-100");
+        pedido.setCliente(piloto);
         pedido.setAutomovel(automovel);
+        pedido.setTipoServico("FAST_LAP");
+        pedido.setFormaPagamento("FATURA_APEXPAY");
+        LocalDateTime inicio = proximoDiaAberto(2).withHour(10);
+        pedido.setDataInicio(inicio);
+        pedido.setDataFim(inicio.plusHours(1));
 
-        when(pedidoRepository.findById(100L)).thenReturn(Optional.of(pedido));
-        when(usuarioRepository.findByEmail("proprietaria@rentcars.com")).thenReturn(Optional.of(empresa));
+        when(automovelRepository.findById(10L)).thenReturn(Optional.of(automovel));
+        when(pedidoRepository.countAlugueisConflitantes(eq(10L), any(), any())).thenReturn(0L);
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(piloto));
+        when(pedidoRepository.save(any(Pedido.class))).thenAnswer(invocation -> {
+            Pedido p = invocation.getArgument(0);
+            p.setId(100L);
+            return p;
+        });
+
+        Pedido criado = facadeComApex.criarPedido(pedido, "piloto@apex.com");
+
+        assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
+        assertEquals("FATURA_AGUARDANDO_APROVACAO", criado.getPagamentoStatus());
+        verify(apexMock, never()).debitarValorLiquido(any(), any(), any(), any());
+
+        when(pedidoRepository.findById(100L)).thenReturn(Optional.of(criado));
+        when(usuarioRepository.findByEmail("admin@apex.com")).thenReturn(Optional.of(admin));
         when(pedidoRepository.update(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Pedido atualizado = pedidoFacade.avaliarPedido(100L, "proprietaria@rentcars.com", "APROVADO");
+        Pedido aprovado = facadeComApex.avaliarPedido(100L, "admin@apex.com", "APROVADO");
 
-        assertEquals("PENDENTE_BANCO", atualizado.getStatus());
-        verify(pedidoRepository, times(1)).update(pedido);
+        assertEquals("APROVADO", aprovado.getStatus());
+        assertEquals("PAGO_CARTEIRA", aprovado.getPagamentoStatus());
+        verify(apexMock, times(1)).debitarValorLiquido(eq(piloto), eq(new BigDecimal("550.00")), eq(criado.getTrackingCode()), anyString());
+        verify(pedidoRepository, times(1)).update(criado);
     }
 
     @Test
-    @DisplayName("Banco deve aprovar pedido movendo status de PENDENTE_BANCO para APROVADO")
-    void deveBancoAprovarPedido() {
-        Agente banco = new Agente();
-        banco.setEmail("agente@banco.com");
-        banco.setRole("ROLE_BANCO");
-
-        Pedido pedido = new Pedido();
-        pedido.setId(101L);
-        pedido.setStatus("PENDENTE_BANCO");
-
-        when(pedidoRepository.findById(101L)).thenReturn(Optional.of(pedido));
-        when(usuarioRepository.findByEmail("agente@banco.com")).thenReturn(Optional.of(banco));
-        when(pedidoRepository.update(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        Pedido atualizado = pedidoFacade.avaliarPedido(101L, "agente@banco.com", "APROVADO");
-
-        assertEquals("APROVADO", atualizado.getStatus());
-        verify(pedidoRepository, times(1)).update(pedido);
-    }
-
-    @Test
-    @DisplayName("Rejeição em qualquer etapa deve marcar o pedido como REJEITADO")
+    @DisplayName("Rejeição pelo Race Control deve marcar o pedido como REJEITADO")
     void deveRejeitarPedido() {
-        Agente empresa = new Agente();
-        empresa.setEmail("proprietaria@rentcars.com");
-        empresa.setRole("ROLE_EMPRESA");
-
-        Automovel automovel = new Automovel();
-        automovel.setId(10L);
-        automovel.setProprietario(empresa);
+        Agente admin = new Agente();
+        admin.setEmail("admin@apex.com");
+        admin.setRole("ROLE_ADMIN");
 
         Pedido pedido = new Pedido();
         pedido.setId(102L);
-        pedido.setStatus("PENDENTE_EMPRESA");
-        pedido.setAutomovel(automovel);
+        pedido.setStatus("AGUARDANDO_APROVACAO");
 
         when(pedidoRepository.findById(102L)).thenReturn(Optional.of(pedido));
-        when(usuarioRepository.findByEmail("proprietaria@rentcars.com")).thenReturn(Optional.of(empresa));
+        when(usuarioRepository.findByEmail("admin@apex.com")).thenReturn(Optional.of(admin));
         when(pedidoRepository.update(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Pedido atualizado = pedidoFacade.avaliarPedido(102L, "proprietaria@rentcars.com", "REJEITADO");
+        Pedido atualizado = pedidoFacade.avaliarPedido(102L, "admin@apex.com", "REJEITADO");
 
         assertEquals("REJEITADO", atualizado.getStatus());
     }
 
     @Test
-    @DisplayName("Empresa deve conseguir emitir contraproposta recalculando valor e movendo para REVISAO_CLIENTE")
+    @DisplayName("Admin deve conseguir emitir contraproposta recalculando valor e movendo para REVISAO_CLIENTE")
     void deveEmitirContrapropostaComRecalculo() {
-        Agente empresa = new Agente();
-        empresa.setEmail("empresa@rentcars.com");
-        empresa.setRole("ROLE_EMPRESA");
+        Agente admin = new Agente();
+        admin.setEmail("admin@apex.com");
+        admin.setRole("ROLE_ADMIN");
 
         Automovel automovel = new Automovel();
         automovel.setId(10L);
         automovel.setPrecoPorDia(new BigDecimal("200.00"));
-        automovel.setProprietario(empresa);
+        automovel.setProprietario(admin);
 
         Pedido pedido = new Pedido();
         pedido.setId(103L);
-        pedido.setStatus("PENDENTE_EMPRESA");
+        pedido.setStatus("AGUARDANDO_APROVACAO");
         pedido.setAutomovel(automovel);
 
-        LocalDateTime novaInicio = LocalDateTime.now().plusDays(2);
-        LocalDateTime novaFim = LocalDateTime.now().plusDays(4); // 2 diárias
+        LocalDateTime novaInicio = proximoDiaAberto(2);
+        LocalDateTime novaFim = novaInicio.plusDays(2); // 2 diárias
 
         Pedido dadosModificados = new Pedido();
         dadosModificados.setDataInicio(novaInicio);
         dadosModificados.setDataFim(novaFim);
 
         when(pedidoRepository.findById(103L)).thenReturn(Optional.of(pedido));
-        when(usuarioRepository.findByEmail("empresa@rentcars.com")).thenReturn(Optional.of(empresa));
+        when(usuarioRepository.findByEmail("admin@apex.com")).thenReturn(Optional.of(admin));
         when(pedidoRepository.countAlugueisConflitantesExcluindoPedido(eq(10L), eq(103L), any(), any())).thenReturn(0L);
         when(pedidoRepository.update(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Pedido atualizado = pedidoFacade.modificarPedidoAgente(103L, "empresa@rentcars.com", dadosModificados);
+        Pedido atualizado = pedidoFacade.modificarPedidoAgente(103L, "admin@apex.com", dadosModificados);
 
         assertEquals("REVISAO_CLIENTE", atualizado.getStatus());
         assertEquals(new BigDecimal("400.00"), atualizado.getValorTotal());
@@ -262,7 +268,7 @@ class PedidoFacadeTest {
     }
 
     @Test
-    @DisplayName("Cliente deve conseguir aceitar contraproposta movendo para PENDENTE_BANCO")
+    @DisplayName("Cliente deve conseguir aceitar contraproposta movendo diretamente para APROVADO")
     void deveClienteAceitarContraproposta() {
         Cliente cliente = new Cliente();
         cliente.setEmail("cliente@rentcars.com");
@@ -277,7 +283,7 @@ class PedidoFacadeTest {
 
         Pedido atualizado = pedidoFacade.responderContrapropostaCliente(104L, "cliente@rentcars.com", true);
 
-        assertEquals("PENDENTE_BANCO", atualizado.getStatus());
+        assertEquals("APROVADO", atualizado.getStatus());
     }
 
     @Test
@@ -288,7 +294,7 @@ class PedidoFacadeTest {
 
         Pedido pedido = new Pedido();
         pedido.setId(105L);
-        pedido.setStatus("PENDENTE_EMPRESA");
+        pedido.setStatus("AGUARDANDO_APROVACAO");
         pedido.setCliente(cliente);
 
         when(pedidoRepository.findById(105L)).thenReturn(Optional.of(pedido));
@@ -324,13 +330,13 @@ class PedidoFacadeTest {
         assertEquals("VISITA_BOX", criado.getTipoServico());
         assertEquals(new BigDecimal("890.00"), criado.getValorTotal());
         assertEquals(new BigDecimal("890.00"), criado.getValorFinal());
-        assertEquals("PENDENTE_EMPRESA", criado.getStatus());
+        assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
         verify(pedidoRepository, never()).countAlugueisConflitantes(any(), any(), any());
     }
 
     @Test
-    @DisplayName("Deve calcular FAST_LAP com multiplicador 0.55, desconto fidelidade e debitar via FATURA_APEXPAY")
-    void deveCalcularFastLapEDebitarFaturaApexPay() {
+    @DisplayName("Deve calcular FAST_LAP com multiplicador 0.55 sem desconto artificial e aguardar aprovação em FATURA_APEXPAY")
+    void deveCalcularFastLapSemDescontoArtificialEAguardarFatura() {
         TrackSlotRepository slotRepo = mock(TrackSlotRepository.class);
         ApexPayFacade apexMock = mock(ApexPayFacade.class);
         PedidoFacade facadeComApex = new PedidoFacade(pedidoRepository, automovelRepository, usuarioRepository, slotRepo, apexMock);
@@ -339,12 +345,12 @@ class PedidoFacadeTest {
         carro.setId(77L);
         carro.setPrecoPorDia(new BigDecimal("1000.00"));
 
-        Cliente vip = new Cliente();
-        vip.setId(3L);
-        vip.setEmail("black@apex.com");
-        vip.setSaldoCarteira(BigDecimal.ZERO);
-        vip.setTotalDepositadoHistorico(new BigDecimal("60000.00"));
-        vip.setStatusFinanceiro("REGULAR");
+        Cliente piloto = new Cliente();
+        piloto.setId(3L);
+        piloto.setEmail("piloto@apex.com");
+        piloto.setSaldoCarteira(BigDecimal.ZERO);
+        piloto.setTotalDepositadoHistorico(new BigDecimal("60000.00"));
+        piloto.setStatusFinanceiro("REGULAR");
 
         Pedido fastLap = new Pedido();
         fastLap.setAutomovel(carro);
@@ -356,15 +362,17 @@ class PedidoFacadeTest {
 
         when(automovelRepository.findById(77L)).thenReturn(Optional.of(carro));
         when(pedidoRepository.countAlugueisConflitantes(eq(77L), any(), any())).thenReturn(0L);
-        when(usuarioRepository.findByEmail("black@apex.com")).thenReturn(Optional.of(vip));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(piloto));
         when(pedidoRepository.save(any(Pedido.class))).thenAnswer(i -> i.getArgument(0));
 
-        Pedido criado = facadeComApex.criarPedido(fastLap, "black@apex.com");
+        Pedido criado = facadeComApex.criarPedido(fastLap, "piloto@apex.com");
 
         assertEquals(new BigDecimal("550.00"), criado.getValorTotal());
-        assertEquals(new BigDecimal("82.50"), criado.getDescontoFidelidade());
-        assertEquals(new BigDecimal("467.50"), criado.getValorFinal());
-        verify(apexMock, times(1)).debitarValorLiquido(eq(vip), eq(new BigDecimal("467.50")), anyString(), anyString());
+        assertEquals(0, criado.getDescontoFidelidade().compareTo(BigDecimal.ZERO));
+        assertEquals(new BigDecimal("550.00"), criado.getValorFinal());
+        assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
+        assertEquals("FATURA_AGUARDANDO_APROVACAO", criado.getPagamentoStatus());
+        verify(apexMock, never()).debitarValorLiquido(any(), any(), any(), any());
     }
 
     @Test

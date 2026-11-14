@@ -3,11 +3,20 @@ package com.aluguel.facades;
 import com.aluguel.models.*;
 import com.aluguel.queue.ReservaQueueEngine;
 import com.aluguel.repositories.*;
+import com.aluguel.services.WhatsAppService;
+import com.aluguel.utils.CnhValidator;
+import io.micronaut.core.annotation.Nullable;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import jakarta.transaction.Transactional;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -21,6 +30,27 @@ public class AdminDashboardFacade {
     private final TransacaoApexPayRepository transacaoRepository;
     private final ReservaQueueEngine queueEngine;
     private final ApexPayFacade apexPayFacade;
+    private final ClienteRepository clienteRepository;
+    private final WhatsAppService whatsAppService;
+
+    @Inject
+    public AdminDashboardFacade(PedidoRepository pedidoRepository,
+                                TrackSlotRepository trackSlotRepository,
+                                UsuarioRepository usuarioRepository,
+                                TransacaoApexPayRepository transacaoRepository,
+                                ReservaQueueEngine queueEngine,
+                                ApexPayFacade apexPayFacade,
+                                @Nullable ClienteRepository clienteRepository,
+                                @Nullable WhatsAppService whatsAppService) {
+        this.pedidoRepository = pedidoRepository;
+        this.trackSlotRepository = trackSlotRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.transacaoRepository = transacaoRepository;
+        this.queueEngine = queueEngine;
+        this.apexPayFacade = apexPayFacade;
+        this.clienteRepository = clienteRepository;
+        this.whatsAppService = whatsAppService;
+    }
 
     public AdminDashboardFacade(PedidoRepository pedidoRepository,
                                 TrackSlotRepository trackSlotRepository,
@@ -28,12 +58,7 @@ public class AdminDashboardFacade {
                                 TransacaoApexPayRepository transacaoRepository,
                                 ReservaQueueEngine queueEngine,
                                 ApexPayFacade apexPayFacade) {
-        this.pedidoRepository = pedidoRepository;
-        this.trackSlotRepository = trackSlotRepository;
-        this.usuarioRepository = usuarioRepository;
-        this.transacaoRepository = transacaoRepository;
-        this.queueEngine = queueEngine;
-        this.apexPayFacade = apexPayFacade;
+        this(pedidoRepository, trackSlotRepository, usuarioRepository, transacaoRepository, queueEngine, apexPayFacade, null, null);
     }
 
     public Map<String, Object> getMetricasDashboard() {
@@ -50,7 +75,10 @@ public class AdminDashboardFacade {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal faturamentoPendente = todosPedidos.stream()
-                .filter(p -> "PENDENTE_EMPRESA".equals(p.getStatus()) || "PENDENTE_BANCO".equals(p.getStatus()) || "REVISAO_CLIENTE".equals(p.getStatus()))
+                .filter(p -> "AGUARDANDO_APROVACAO".equals(p.getStatus())
+                        || "PENDENTE_EMPRESA".equals(p.getStatus())
+                        || "PENDENTE_BANCO".equals(p.getStatus())
+                        || "REVISAO_CLIENTE".equals(p.getStatus()))
                 .map(p -> p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
@@ -78,7 +106,9 @@ public class AdminDashboardFacade {
         long totalSessoesAgendadas = todosPedidos.size();
         long sessoesConfirmadas = todosPedidos.stream().filter(p -> "APROVADO".equals(p.getStatus())).count();
         long sessoesPendentes = todosPedidos.stream()
-                .filter(p -> "PENDENTE_EMPRESA".equals(p.getStatus()) || "PENDENTE_BANCO".equals(p.getStatus()))
+                .filter(p -> "AGUARDANDO_APROVACAO".equals(p.getStatus())
+                        || "PENDENTE_EMPRESA".equals(p.getStatus())
+                        || "PENDENTE_BANCO".equals(p.getStatus()))
                 .count();
 
         kpis.put("faturamentoTotalBRL", faturamentoTotal);
@@ -91,6 +121,73 @@ public class AdminDashboardFacade {
         kpis.put("totalSessoesAgendadas", totalSessoesAgendadas);
         kpis.put("sessoesConfirmadas", sessoesConfirmadas);
         kpis.put("sessoesPendentes", sessoesPendentes);
+
+        // 1.1 Séries temporais para gráficos de evolução (últimos 6 meses contínuos)
+        DateTimeFormatter mesFmt = DateTimeFormatter.ofPattern("MMM/yy", new Locale("pt", "BR"));
+        Map<String, Map<String, Object>> timelineMap = new LinkedHashMap<>();
+        YearMonth ymAtual = YearMonth.now();
+        for (int i = 5; i >= 0; i--) {
+            YearMonth ym = ymAtual.minusMonths(i);
+            String label = ym.format(mesFmt).toUpperCase();
+            Map<String, Object> ponto = new LinkedHashMap<>();
+            ponto.put("mes", label);
+            ponto.put("faturamento", BigDecimal.ZERO);
+            ponto.put("lucro", BigDecimal.ZERO);
+            ponto.put("sessoes", 0);
+            timelineMap.put(ym.toString(), ponto);
+        }
+
+        for (Pedido p : todosPedidos) {
+            if (p.getDataPedido() != null) {
+                YearMonth ym = YearMonth.from(p.getDataPedido());
+                String key = ym.toString();
+                Map<String, Object> ponto = timelineMap.computeIfAbsent(key, k -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("mes", ym.format(mesFmt).toUpperCase());
+                    m.put("faturamento", BigDecimal.ZERO);
+                    m.put("lucro", BigDecimal.ZERO);
+                    m.put("sessoes", 0);
+                    return m;
+                });
+
+                BigDecimal val = p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO);
+                if ("APROVADO".equals(p.getStatus())) {
+                    BigDecimal fatAtual = (BigDecimal) ponto.get("faturamento");
+                    BigDecimal lucroAtual = (BigDecimal) ponto.get("lucro");
+                    ponto.put("faturamento", fatAtual.add(val));
+                    ponto.put("lucro", lucroAtual.add(val.multiply(new BigDecimal("0.68")).setScale(2, RoundingMode.HALF_UP)));
+                }
+                int sess = (int) ponto.get("sessoes");
+                ponto.put("sessoes", sess + 1);
+            }
+        }
+        kpis.put("timelineFaturamento", new ArrayList<>(timelineMap.values()));
+
+        // 1.2 Distribuição de receita e volume por modalidade de serviço
+        Map<String, Map<String, Object>> modalidadesMap = new LinkedHashMap<>();
+        for (Pedido p : todosPedidos) {
+            String tipo = p.getTipoServico() != null ? p.getTipoServico() : "TRACK_DAY";
+            String label = switch (tipo) {
+                case "HOT_LAP_COACH" -> "Hot Lap Coach";
+                case "VISITA_BOX" -> "Visita ao Box";
+                default -> "Track Day Oficial";
+            };
+            modalidadesMap.compute(label, (k, v) -> {
+                if (v == null) {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("modalidade", label);
+                    m.put("tipoServico", tipo);
+                    m.put("quantidade", 0);
+                    m.put("totalBRL", BigDecimal.ZERO);
+                    v = m;
+                }
+                v.put("quantidade", (int) v.get("quantidade") + 1);
+                BigDecimal val = p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO);
+                v.put("totalBRL", ((BigDecimal) v.get("totalBRL")).add(val));
+                return v;
+            });
+        }
+        kpis.put("distribuicaoModalidades", new ArrayList<>(modalidadesMap.values()));
 
         // 2. Faturamento por Autódromo / Circuito
         Map<String, BigDecimal> faturamentoPorCircuito = new HashMap<>();
@@ -170,20 +267,7 @@ public class AdminDashboardFacade {
         List<Map<String, Object>> listaClientes = clientes.stream()
                 .sorted(Comparator.comparing(Usuario::isInadimplente).reversed()
                         .thenComparing(u -> u.getSaldoCarteira() != null ? u.getSaldoCarteira() : BigDecimal.ZERO))
-                .map(u -> {
-                    Map<String, Object> item = new LinkedHashMap<>();
-                    item.put("id", u.getId());
-                    item.put("nome", u.getNome());
-                    item.put("email", u.getEmail());
-                    item.put("cnhNumero", u.getCnhNumero());
-                    item.put("saldoCarteira", u.getSaldoCarteira() != null ? u.getSaldoCarteira() : BigDecimal.ZERO);
-                    item.put("totalDepositadoHistorico", u.getTotalDepositadoHistorico() != null ? u.getTotalDepositadoHistorico() : BigDecimal.ZERO);
-                    item.put("tierFidelidade", u.getTierFidelidade());
-                    item.put("porcentagemDesconto", u.getFatorDesconto().multiply(new BigDecimal("100")).intValue());
-                    item.put("statusFinanceiro", u.isInadimplente() ? "INADIMPLENTE" : "REGULAR");
-                    item.put("inadimplente", u.isInadimplente());
-                    return item;
-                })
+                .map(this::converterUsuarioResumo)
                 .toList();
         kpis.put("clientes", listaClientes);
 
@@ -198,7 +282,9 @@ public class AdminDashboardFacade {
                     item.put("clienteEmail", p.getCliente() != null ? p.getCliente().getEmail() : "-");
                     item.put("clienteInadimplente", p.getCliente() != null && p.getCliente().isInadimplente());
                     item.put("automovelNome", p.getAutomovel() != null ? p.getAutomovel().getMarca() + " " + p.getAutomovel().getModelo() : "Paddock / Sem Veículo");
+                    item.put("circuitoId", resolverIdCircuito(p));
                     item.put("circuitoNome", resolverNomeCircuito(p));
+                    item.put("trackSlotId", p.getTrackSlot() != null ? p.getTrackSlot().getId() : null);
                     String slotData = "Data a definir";
                     if (p.getTrackSlot() != null && p.getTrackSlot().getData() != null) {
                         slotData = p.getTrackSlot().getData().toString();
@@ -246,6 +332,12 @@ public class AdminDashboardFacade {
         if (p.getCliente() == null) {
             throw new IllegalStateException("Agendamento sem cliente vinculado.");
         }
+        if (!"APROVADO".equalsIgnoreCase(p.getStatus())) {
+            throw new IllegalStateException("Só é possível registrar franquia de sinistro em sessões com status APROVADO.");
+        }
+        if ("VISITA_BOX".equalsIgnoreCase(p.getTipoServico())) {
+            throw new IllegalArgumentException("A modalidade Visita ao Box não envolve condução de veículo em pista e não permite cobrança de sinistro.");
+        }
 
         TransacaoApexPay transacao = apexPayFacade.lancarCobrancaSinistro(
                 p.getCliente().getEmail(), valor, p.getTrackingCode(), motivo
@@ -261,6 +353,386 @@ public class AdminDashboardFacade {
                 "transacao", transacao,
                 "carteiraPiloto", apexPayFacade.getResumoCarteira(p.getCliente().getEmail())
         );
+    }
+
+    public List<Map<String, Object>> listarUsuariosAdmin(String busca, String status) {
+        String buscaLimpa = busca != null ? busca.trim().toLowerCase() : "";
+        String statusLimpo = status != null ? status.trim().toUpperCase() : "";
+
+        return StreamSupport.stream(usuarioRepository.findAll().spliterator(), false)
+                .filter(u -> "ROLE_CLIENTE".equals(u.getRole()))
+                .filter(u -> {
+                    if (buscaLimpa.isEmpty()) return true;
+                    boolean matchNome = u.getNome() != null && u.getNome().toLowerCase().contains(buscaLimpa);
+                    boolean matchEmail = u.getEmail() != null && u.getEmail().toLowerCase().contains(buscaLimpa);
+                    boolean matchCnh = u.getCnhNumero() != null && u.getCnhNumero().contains(buscaLimpa);
+                    boolean matchTel = u.getTelefone() != null && u.getTelefone().contains(buscaLimpa);
+                    return matchNome || matchEmail || matchCnh || matchTel;
+                })
+                .filter(u -> {
+                    if (statusLimpo.isEmpty() || "TODOS".equals(statusLimpo)) return true;
+                    if ("DEVEDORES".equals(statusLimpo) || "INADIMPLENTE".equals(statusLimpo)) return u.isInadimplente();
+                    if ("EM_DIA".equals(statusLimpo) || "REGULAR".equals(statusLimpo)) return !u.isInadimplente();
+                    if ("BLOQUEADO".equals(statusLimpo)) return "BLOQUEADO_RESERVAS".equalsIgnoreCase(u.getStatusConta());
+                    if ("SUSPENSO".equals(statusLimpo)) return "SUSPENSO".equalsIgnoreCase(u.getStatusConta());
+                    if ("SEM_CNH".equals(statusLimpo)) return u.getCnhNumero() == null || u.getCnhNumero().isBlank();
+                    return true;
+                })
+                .sorted(Comparator.comparing(Usuario::isInadimplente).reversed()
+                        .thenComparing(u -> u.getNome() != null ? u.getNome() : ""))
+                .map(this::converterUsuarioResumo)
+                .toList();
+    }
+
+    public Map<String, Object> buscarUsuarioDetalhesAdmin(Long usuarioId) {
+        Usuario u = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new IllegalArgumentException("Piloto não encontrado."));
+
+        Map<String, Object> detalhes = converterUsuarioResumo(u);
+
+        // Histórico de pedidos do piloto
+        List<Pedido> pedidosPiloto = StreamSupport.stream(pedidoRepository.findAll().spliterator(), false)
+                .filter(p -> p.getCliente() != null && Objects.equals(p.getCliente().getId(), usuarioId))
+                .sorted(Comparator.comparing(Pedido::getDataPedido, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+
+        List<Map<String, Object>> historicoSessoes = pedidosPiloto.stream().map(p -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", p.getId());
+            m.put("trackingCode", p.getTrackingCode());
+            m.put("automovel", p.getAutomovel() != null ? p.getAutomovel().getMarca() + " " + p.getAutomovel().getModelo() : "Paddock");
+            m.put("circuito", resolverNomeCircuito(p));
+            m.put("tipoServico", p.getTipoServico());
+            m.put("status", p.getStatus());
+            m.put("valorFinal", p.getValorFinal());
+            m.put("valorSinistro", p.getValorSinistro() != null ? p.getValorSinistro() : BigDecimal.ZERO);
+            m.put("data", p.getDataPedido() != null ? p.getDataPedido().toString() : "-");
+            return m;
+        }).toList();
+
+        detalhes.put("historicoSessoes", historicoSessoes);
+        detalhes.put("resumoCarteira", apexPayFacade.getResumoCarteira(u.getEmail()));
+
+        return detalhes;
+    }
+
+    @Transactional
+    public Map<String, Object> criarUsuarioAdmin(Map<String, Object> data) {
+        if (data == null) {
+            throw new IllegalArgumentException("Dados do usuário são obrigatórios.");
+        }
+
+        String nome = data.get("nome") != null ? data.get("nome").toString().trim() : "";
+        if (nome.length() < 3) {
+            throw new IllegalArgumentException("O nome deve ter no mínimo 3 caracteres.");
+        }
+
+        String email = data.get("email") != null ? data.get("email").toString().trim().toLowerCase() : "";
+        if (email.isEmpty() || !email.contains("@")) {
+            throw new IllegalArgumentException("E-mail de acesso inválido.");
+        }
+        if (usuarioRepository.findByEmail(email).isPresent()) {
+            throw new IllegalArgumentException("Já existe um usuário cadastrado com este e-mail.");
+        }
+
+        Object passObj = data.containsKey("password") ? data.get("password") : data.get("senha");
+        String senha = passObj != null ? passObj.toString().trim() : "";
+        if (senha.length() < 6) {
+            throw new IllegalArgumentException("A senha deve ter no mínimo 6 caracteres.");
+        }
+
+        String roleSolicitada = data.get("role") != null ? data.get("role").toString().trim().toUpperCase() : "CLIENTE";
+        boolean criarAdmin = roleSolicitada.contains("ADMIN");
+
+        Usuario novoUsuario;
+        if (criarAdmin) {
+            Agente agente = new Agente();
+            agente.setRole("ROLE_ADMIN");
+            novoUsuario = agente;
+        } else {
+            Cliente cliente = new Cliente();
+            cliente.setRole("ROLE_CLIENTE");
+            if (data.containsKey("cpf") && data.get("cpf") != null) {
+                String cpfLimpo = data.get("cpf").toString().replaceAll("\\D", "");
+                if (!cpfLimpo.isEmpty()) {
+                    if (clienteRepository != null && clienteRepository.findByCpf(cpfLimpo).isPresent()) {
+                        throw new IllegalArgumentException("Já existe um piloto cadastrado com este CPF.");
+                    }
+                    cliente.setCpf(cpfLimpo);
+                }
+            }
+            if (data.containsKey("rg") && data.get("rg") != null) {
+                cliente.setRg(data.get("rg").toString().trim());
+            }
+            if (data.containsKey("profissao") && data.get("profissao") != null) {
+                cliente.setProfissao(data.get("profissao").toString().trim());
+            }
+            novoUsuario = cliente;
+        }
+
+        novoUsuario.setNome(nome);
+        novoUsuario.setEmail(email);
+        novoUsuario.setSenha(BCrypt.hashpw(senha, BCrypt.gensalt()));
+
+        if (data.containsKey("telefone") && data.get("telefone") != null) {
+            String tel = data.get("telefone").toString().replaceAll("\\D", "");
+            if (!tel.isEmpty()) {
+                novoUsuario.setTelefone(tel);
+            }
+        }
+
+        if (data.containsKey("endereco") && data.get("endereco") != null) {
+            novoUsuario.setEndereco(data.get("endereco").toString().trim());
+        }
+
+        if (data.containsKey("cnhNumero") && data.get("cnhNumero") != null) {
+            String cnh = data.get("cnhNumero").toString().replaceAll("\\D", "");
+            if (!cnh.isEmpty()) {
+                if (!CnhValidator.isValid(cnh)) {
+                    throw new IllegalArgumentException("Número de CNH inválido pelo algoritmo oficial (Módulo 11). Use: " + CnhValidator.CNH_TESTE_OFICIAL);
+                }
+                novoUsuario.setCnhNumero(cnh);
+                novoUsuario.setCnhCategoria(data.get("cnhCategoria") != null ? data.get("cnhCategoria").toString().trim().toUpperCase() : "B");
+            }
+        }
+
+        if (data.containsKey("dataNascimento") && data.get("dataNascimento") != null) {
+            String dt = data.get("dataNascimento").toString().trim();
+            if (!dt.isEmpty()) {
+                LocalDate nasc = LocalDate.parse(dt);
+                long idade = ChronoUnit.YEARS.between(nasc, LocalDate.now());
+                if (idade < 21) {
+                    throw new IllegalArgumentException("Piloto deve possuir idade mínima de 21 anos.");
+                }
+                novoUsuario.setDataNascimento(nasc);
+            }
+        }
+
+        if (data.containsKey("statusConta") && data.get("statusConta") != null) {
+            String sc = data.get("statusConta").toString().trim().toUpperCase();
+            if (Set.of("ATIVO", "BLOQUEADO_RESERVAS", "SUSPENSO").contains(sc)) {
+                novoUsuario.setStatusConta(sc);
+            }
+        }
+
+        // Saldo Inicial ApexPay (opcional para demonstração de recarga)
+        if (data.containsKey("saldoInicial") && data.get("saldoInicial") != null) {
+            try {
+                BigDecimal saldo = new BigDecimal(data.get("saldoInicial").toString().trim());
+                if (saldo.compareTo(BigDecimal.ZERO) > 0) {
+                    novoUsuario.creditarSaldo(saldo);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        Usuario salvo = usuarioRepository.save(novoUsuario);
+
+        // Se creditou saldo inicial, registra transação no extrato
+        if (salvo.getSaldoCarteira() != null && salvo.getSaldoCarteira().compareTo(BigDecimal.ZERO) > 0 && transacaoRepository != null) {
+            TransacaoApexPay tx = new TransacaoApexPay(
+                    salvo,
+                    "CREDITO_ADMIN",
+                    salvo.getSaldoCarteira(),
+                    "Bônus de Boas-Vindas Paddock (Admin)",
+                    "PIX"
+            );
+            transacaoRepository.save(tx);
+        }
+
+        // Dispara mensagem de boas-vindas no WhatsApp se informado telefone
+        if (whatsAppService != null && salvo.getTelefone() != null && !salvo.getTelefone().isBlank()) {
+            whatsAppService.enviarBoasVindasAsync(salvo.getTelefone(), salvo.getNome());
+        }
+
+        return converterUsuarioResumo(salvo);
+    }
+
+    @Transactional
+    public Map<String, Object> atualizarUsuarioAdmin(Long usuarioId, Map<String, Object> data) {
+        Usuario u = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new IllegalArgumentException("Piloto não encontrado."));
+
+        boolean isAdmin = u.getRole() != null && (u.getRole().contains("ADMIN") || "admin@apex.com".equalsIgnoreCase(u.getEmail()));
+
+        // 🔒 PROTEÇÃO DE SEGURANÇA: A conta de Administrador é protegida para demonstração pública
+        if (isAdmin) {
+            if (data.containsKey("senha") || data.containsKey("password")) {
+                throw new IllegalStateException("A senha da conta de Administrador é protegida para demonstração pública e não pode ser alterada.");
+            }
+            if (data.containsKey("role") && !data.get("role").toString().contains("ADMIN")) {
+                throw new IllegalStateException("Não é permitido rebaixar os privilégios da conta de Administrador principal.");
+            }
+            if (data.containsKey("email") && !"admin@apex.com".equalsIgnoreCase(data.get("email").toString().trim())) {
+                throw new IllegalStateException("O e-mail da conta de Administrador principal não pode ser alterado.");
+            }
+            if (data.containsKey("statusConta") && !"ATIVO".equalsIgnoreCase(data.get("statusConta").toString().trim())) {
+                throw new IllegalStateException("A conta de Administrador principal não pode ser suspensa ou bloqueada.");
+            }
+            if (data.containsKey("nome") && data.get("nome") != null && !data.get("nome").toString().trim().equals(u.getNome())) {
+                throw new IllegalStateException("O nome e as credenciais da conta de Administrador são imutáveis para demonstração pública.");
+            }
+        }
+
+        // Se não for admin, permite redefinição direta de senha pelo administrador
+        if (!isAdmin && (data.containsKey("password") || data.containsKey("senha"))) {
+            Object passObj = data.containsKey("password") ? data.get("password") : data.get("senha");
+            if (passObj != null && !passObj.toString().trim().isEmpty()) {
+                String pass = passObj.toString().trim();
+                if (pass.length() < 6) {
+                    throw new IllegalArgumentException("A nova senha deve ter no mínimo 6 caracteres.");
+                }
+                u.setSenha(BCrypt.hashpw(pass, BCrypt.gensalt()));
+            }
+        }
+
+        if (!isAdmin && data.containsKey("role") && data.get("role") != null) {
+            String r = data.get("role").toString().trim().toUpperCase();
+            u.setRole(r.contains("ADMIN") ? "ROLE_ADMIN" : "ROLE_CLIENTE");
+        }
+
+        if (data.containsKey("nome") && data.get("nome") != null) {
+            String nome = data.get("nome").toString().trim();
+            if (nome.length() < 3) {
+                throw new IllegalArgumentException("O nome deve ter no mínimo 3 caracteres.");
+            }
+            u.setNome(nome);
+        }
+
+        if (data.containsKey("email") && data.get("email") != null) {
+            String email = data.get("email").toString().trim().toLowerCase();
+            if (!email.equalsIgnoreCase(u.getEmail())) {
+                if (usuarioRepository.findByEmail(email).isPresent()) {
+                    throw new IllegalArgumentException("Já existe outro usuário cadastrado com este e-mail.");
+                }
+                u.setEmail(email);
+            }
+        }
+
+        if (data.containsKey("telefone") && data.get("telefone") != null) {
+            String tel = data.get("telefone").toString().replaceAll("\\D", "");
+            u.setTelefone(tel);
+        }
+
+        if (data.containsKey("endereco") && data.get("endereco") != null) {
+            u.setEndereco(data.get("endereco").toString().trim());
+        }
+
+        if (data.containsKey("statusConta") && data.get("statusConta") != null) {
+            String sc = data.get("statusConta").toString().trim().toUpperCase();
+            if (Set.of("ATIVO", "BLOQUEADO_RESERVAS", "SUSPENSO").contains(sc)) {
+                u.setStatusConta(sc);
+            }
+        }
+
+        if (data.containsKey("statusFinanceiro") && data.get("statusFinanceiro") != null) {
+            String sf = data.get("statusFinanceiro").toString().trim().toUpperCase();
+            if (Set.of("REGULAR", "INADIMPLENTE").contains(sf)) {
+                u.setStatusFinanceiro(sf);
+            }
+        }
+
+        if (data.containsKey("cnhNumero") && data.get("cnhNumero") != null) {
+            String cnh = data.get("cnhNumero").toString().replaceAll("\\D", "");
+            if (!cnh.isEmpty()) {
+                if (!CnhValidator.isValid(cnh)) {
+                    throw new IllegalArgumentException("Número de CNH inválido pelo algoritmo oficial (Módulo 11). Use: " + CnhValidator.CNH_TESTE_OFICIAL);
+                }
+                u.setCnhNumero(cnh);
+            } else {
+                u.setCnhNumero(null);
+            }
+        }
+
+        if (data.containsKey("cnhCategoria") && data.get("cnhCategoria") != null) {
+            u.setCnhCategoria(data.get("cnhCategoria").toString().trim().toUpperCase());
+        }
+
+        if (data.containsKey("dataNascimento") && data.get("dataNascimento") != null) {
+            String dt = data.get("dataNascimento").toString().trim();
+            if (!dt.isEmpty()) {
+                LocalDate nasc = LocalDate.parse(dt);
+                long idade = ChronoUnit.YEARS.between(nasc, LocalDate.now());
+                if (idade < 21) {
+                    throw new IllegalArgumentException("Piloto deve possuir idade mínima de 21 anos.");
+                }
+                u.setDataNascimento(nasc);
+            }
+        }
+
+        if (u instanceof Cliente cliente) {
+            if (data.containsKey("cpf") && data.get("cpf") != null) {
+                cliente.setCpf(data.get("cpf").toString().replaceAll("\\D", ""));
+            }
+            if (data.containsKey("rg") && data.get("rg") != null) {
+                cliente.setRg(data.get("rg").toString().trim());
+            }
+        }
+
+        usuarioRepository.update(u);
+        return buscarUsuarioDetalhesAdmin(usuarioId);
+    }
+
+    @Transactional
+    public Map<String, Object> excluirUsuarioAdmin(Long usuarioId) {
+        Usuario u = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new IllegalArgumentException("Piloto não encontrado."));
+
+        if (u.getRole() != null && (u.getRole().contains("ADMIN") || "admin@apex.com".equalsIgnoreCase(u.getEmail()))) {
+            throw new IllegalStateException("Não é permitido excluir o usuário Administrador principal.");
+        }
+
+        // Verifica se o piloto possui histórico de pedidos no paddock
+        boolean temPedidos = StreamSupport.stream(pedidoRepository.findAll().spliterator(), false)
+                .anyMatch(p -> p.getCliente() != null && Objects.equals(p.getCliente().getId(), usuarioId));
+
+        if (temPedidos) {
+            // Preserva integridade relacional do histórico: suspende conta
+            u.setStatusConta("SUSPENSO");
+            u.setStatusFinanceiro("INADIMPLENTE");
+            usuarioRepository.update(u);
+            return Map.of(
+                    "success", true,
+                    "deleted", false,
+                    "message", "O piloto possui histórico de sessões em pista e foi SUSPENSO para garantir a integridade dos relatórios e telemetria."
+            );
+        } else {
+            usuarioRepository.delete(u);
+            return Map.of(
+                    "success", true,
+                    "deleted", true,
+                    "message", "Piloto excluído com sucesso do sistema."
+            );
+        }
+    }
+
+    private Map<String, Object> converterUsuarioResumo(Usuario u) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", u.getId());
+        item.put("nome", u.getNome());
+        item.put("email", u.getEmail());
+        item.put("telefone", u.getTelefone());
+        item.put("endereco", u.getEndereco());
+        item.put("cnhNumero", u.getCnhNumero());
+        item.put("cnhCategoria", u.getCnhCategoria());
+        item.put("dataNascimento", u.getDataNascimento());
+        item.put("statusConta", u.getStatusConta());
+        item.put("saldoCarteira", u.getSaldoCarteira() != null ? u.getSaldoCarteira() : BigDecimal.ZERO);
+        item.put("totalDepositadoHistorico", u.getTotalDepositadoHistorico() != null ? u.getTotalDepositadoHistorico() : BigDecimal.ZERO);
+        item.put("tierFidelidade", u.getTierFidelidade());
+        item.put("porcentagemDesconto", u.getFatorDesconto().multiply(new BigDecimal("100")).intValue());
+        item.put("statusFinanceiro", u.isInadimplente() ? "INADIMPLENTE" : "REGULAR");
+        item.put("inadimplente", u.isInadimplente());
+        return item;
+    }
+
+    private String resolverIdCircuito(Pedido p) {
+        if (p.getTrackSlot() != null && p.getTrackSlot().getCircuito() != null) {
+            return p.getTrackSlot().getCircuito().getId();
+        }
+        if (p.getAutomovel() != null && p.getAutomovel().getCircuito() != null) {
+            return p.getAutomovel().getCircuito().getId();
+        }
+        return null;
     }
 
     private String resolverNomeCircuito(Pedido p) {

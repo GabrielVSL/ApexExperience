@@ -30,7 +30,7 @@ export function CarCard({ carro, index, onSelect }: CarCardProps) {
   const { formatPrice } = useCurrencyStore();
   const { user } = useAuthStore();
   const isStaff = Boolean(user && user.role !== 'CLIENTE');
-  const staffTarget = user?.role === 'BANCO' ? '/analises' : '/frota';
+  const staffTarget = '/frota';
   const specs = getCarDisplaySpecs(carro);
   const imageSrc = resolveStudioCarImage(carro);
 
@@ -133,7 +133,7 @@ export function CarCard({ carro, index, onSelect }: CarCardProps) {
               to={staffTarget}
               className="bg-white/10 text-white hover:bg-[#FF1717] border border-white/15 hover:border-[#FF1717] text-xs font-medium px-6 py-2.5 rounded-full transition-all duration-200 active:scale-[0.98]"
             >
-              {user?.role === 'BANCO' ? 'Painel de Auditoria' : 'Gerenciar nos Boxes'}
+              Gerenciar nos Boxes
             </Link>
           ) : (
             <button

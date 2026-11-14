@@ -25,18 +25,15 @@ public class AutomovelController {
     }
 
     @Post
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> criar(@Body Automovel automovel, Principal principal) {
-        try {
-            Automovel salvo = facade.criar(automovel, principal.getName());
-            return HttpResponse.created(salvo);
-        } catch (IllegalArgumentException e) {
-            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
-        }
+        return HttpResponse.badRequest(Map.of(
+                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido criar novos veículos na coleção fixa."
+        ));
     }
 
     @Get("/minha-frota")
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> listarMinhaFrota(Principal principal) {
         try {
             return HttpResponse.ok(facade.listarPorProprietario(principal.getName()));
@@ -46,24 +43,19 @@ public class AutomovelController {
     }
 
     @Put("/{id}")
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> atualizar(@PathVariable Long id, @Body Automovel automovel, Principal principal) {
-        try {
-            return HttpResponse.ok(facade.atualizar(id, automovel, principal.getName()));
-        } catch (IllegalArgumentException e) {
-            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
-        }
+        return HttpResponse.badRequest(Map.of(
+                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido alterar as especificações dos supercarros da coleção fixa."
+        ));
     }
 
     @Delete("/{id}")
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> excluir(@PathVariable Long id, Principal principal) {
-        try {
-            facade.deletar(id, principal.getName());
-            return HttpResponse.noContent();
-        } catch (IllegalArgumentException e) {
-            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
-        }
+        return HttpResponse.badRequest(Map.of(
+                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido remover veículos da coleção fixa."
+        ));
     }
 
     @Get("/{id}")

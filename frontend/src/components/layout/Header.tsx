@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/useAuthStore';
-import { User } from 'lucide-react';
+import { User, Shield, Wallet, LogOut } from 'lucide-react';
 import { motion, useScroll, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import UserProfileModal from './UserProfileModal';
 
 const MenuIcon = ({ size = 24 }: { size?: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
@@ -33,6 +34,7 @@ function getTargetCoords() {
 
 export default function Header({ transparent = false }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -148,8 +150,6 @@ export default function Header({ transparent = false }: HeaderProps) {
     ([p, mx]: number[]) => (1 - p) * (mx * 0.55)
   );
 
-  const userName = user?.email ? user.email.split('@')[0] : '';
-
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -165,53 +165,66 @@ export default function Header({ transparent = false }: HeaderProps) {
     navigate('/cadastro', { state: { from: location.pathname } });
   };
 
-  const linkClass = "text-sm font-medium tracking-normal text-white/75 hover:text-white transition-colors duration-200 whitespace-nowrap";
+  const linkClass = "text-sm font-medium tracking-normal text-white/70 hover:text-white transition-colors duration-200 whitespace-nowrap";
+
+  const isNavActive = (path: string) => {
+    if (path === '/admin?tab=pilotos') {
+      return (
+        (location.pathname === '/admin' && location.search.includes('pilotos')) ||
+        location.pathname === '/admin/usuarios'
+      );
+    }
+    if (path === '/admin') {
+      return location.pathname === '/admin' && !location.search.includes('pilotos');
+    }
+    if (path === '/') {
+      return location.pathname === '/';
+    }
+    return location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
+  };
 
   const renderNavLinks = (customClass?: string) => {
     const baseCls = customClass || linkClass;
-    const itemCls = (path: string) =>
-      `${baseCls} ${location.pathname === path ? '!text-white font-semibold' : ''}`.trim();
+    const itemCls = (path: string) => {
+      const active = isNavActive(path);
+      return `${baseCls} relative py-1 ${
+        active
+          ? '!text-white font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[2px] after:bg-[#FF1717] after:rounded-full'
+          : 'text-white/65 hover:text-white'
+      }`.trim();
+    };
 
+    // --- MODO 1: ADMINISTRADOR EXECUTIVO (RACE CONTROL) ---
     if (user?.role === 'ADMIN') {
       return (
         <>
-          <Link to="/admin" className={itemCls('/admin')}>Painel Admin</Link>
-          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões</Link>
-          <Link to="/frota" className={itemCls('/frota')}>Boxes & Frota</Link>
-          <Link to="/analises" className={itemCls('/analises')}>Auditoria</Link>
-          <Link to="/" className={itemCls('/')}>Vitrine</Link>
+          <Link to="/admin" className={itemCls('/admin')}>Painel Executivo</Link>
+          <Link to="/admin?tab=pilotos" className={itemCls('/admin?tab=pilotos')}>Gestão de Pilotos</Link>
+          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões & Paddock</Link>
+          <Link to="/cars" className={itemCls('/cars')}>Supercarros</Link>
         </>
       );
     }
 
-    if (user?.role === 'EMPRESA') {
+    // --- MODO 2: PILOTO AUTENTICADO (CLIENTE) ---
+    if (user?.role === 'CLIENTE') {
       return (
         <>
-          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões</Link>
-          <Link to="/frota" className={itemCls('/frota')}>Boxes & Frota</Link>
-          <Link to="/" className={itemCls('/')}>Vitrine</Link>
+          <Link to="/" className={itemCls('/')}>Início</Link>
+          <Link to="/pistas" className={itemCls('/pistas')}>Pistas</Link>
+          <Link to="/cars" className={itemCls('/cars')}>Frota</Link>
+          <Link to="/meus-alugueis" className={itemCls('/meus-alugueis')}>Minhas Sessões</Link>
         </>
       );
     }
 
-    if (user?.role === 'BANCO') {
-      return (
-        <>
-          <Link to="/analises" className={itemCls('/analises')}>Auditoria</Link>
-          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões</Link>
-          <Link to="/" className={itemCls('/')}>Vitrine</Link>
-        </>
-      );
-    }
-
+    // --- MODO 3: VISITANTE NÃO AUTENTICADO ---
     return (
       <>
         <Link to="/" className={itemCls('/')}>Início</Link>
         <Link to="/pistas" className={itemCls('/pistas')}>Pistas</Link>
         <Link to="/cars" className={itemCls('/cars')}>Frota</Link>
         <a href="/#como-funciona" className={baseCls}>Como Funciona</a>
-        {user?.role === 'CLIENTE' && <Link to="/meus-alugueis" className={itemCls('/meus-alugueis')}>Minhas Sessões</Link>}
-        {user?.role === 'CLIENTE' && <Link to="/apexpay" className={itemCls('/apexpay')}>ApexPay</Link>}
       </>
     );
   };
@@ -263,12 +276,20 @@ export default function Header({ transparent = false }: HeaderProps) {
       <header 
         className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ease-out ${bgClass}`}
       >
+        {/* Indicador no topo */}
+        {user?.role === 'ADMIN' && (
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#FF1717] to-transparent pointer-events-none" />
+        )}
+
         <div className="container mx-auto px-6">
           <div className="relative flex items-center justify-between h-10">
             
             {/* Slot de Destino: onde a logo morfa e assenta na Home, ou logo estática em subpáginas */}
             {!transparent ? (
-              <Link to="/" className="flex items-center gap-2.5 group cursor-pointer shrink-0">
+              <Link 
+                to={user?.role === 'ADMIN' ? '/admin' : '/'} 
+                className="flex items-center gap-2.5 group cursor-pointer shrink-0"
+              >
                 <img 
                   src="/logo.png" 
                   alt="Apex Logo" 
@@ -277,6 +298,11 @@ export default function Header({ transparent = false }: HeaderProps) {
                 <span className="text-xl font-normal tracking-[-0.03em] text-white font-sans lowercase leading-none -translate-y-0.5">
                   apex
                 </span>
+                {user?.role === 'CLIENTE' ? (
+                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60 font-mono text-[9px] uppercase tracking-wide ml-1">
+                    Piloto
+                  </span>
+                ) : null}
               </Link>
             ) : (
               <div 
@@ -301,22 +327,44 @@ export default function Header({ transparent = false }: HeaderProps) {
               {renderNavLinks()}
             </motion.nav>
 
-            {/* Right Controls: Entrar & Cadastrar-se em Inter Sans */}
+            {/* Right Controls: Diferenciado para Administrador, Piloto ou Visitante */}
             <div className="hidden md:flex items-center gap-3 font-sans relative z-10">
               {user ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 py-1.5 px-3.5 rounded-full bg-white/10 border border-white/15 text-white">
-                    <User size={14} className="text-[#FF1717]" />
-                    <span className="text-xs font-sans font-medium text-white">{userName}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-sans text-white/70">{user.role}</span>
+                user.role === 'ADMIN' ? (
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      onClick={() => setProfileModalOpen(true)}
+                      className="w-9 h-9 rounded-full bg-[#0E121A] hover:bg-white/10 border border-[#FF1717]/40 hover:border-[#FF1717] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
+                      title="Abrir perfil de Administrador"
+                      aria-label="Perfil de Administrador"
+                    >
+                      <Shield size={15} className="text-[#FF1717]" />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#FF1717] border border-black" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={handleLogout} 
-                    className="text-xs font-sans text-white/50 hover:text-red-400 font-medium transition-colors px-2 py-1 cursor-pointer"
-                  >
-                    Sair
-                  </button>
-                </div>
+                ) : (
+                  <div className="flex items-center gap-2.5">
+                    <Link
+                      to="/apexpay"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FF1717]/10 hover:bg-[#FF1717]/20 border border-[#FF1717]/25 text-white text-xs font-mono transition-colors"
+                      title="Acessar carteira e saldo ApexPay"
+                    >
+                      <Wallet size={12} className="text-[#FF1717]" />
+                      <span>ApexPay</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setProfileModalOpen(true)}
+                      className="w-9 h-9 rounded-full bg-[#0E121A] hover:bg-white/10 border border-white/20 hover:border-[#FF1717] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
+                      title="Abrir perfil do piloto"
+                      aria-label="Perfil do piloto"
+                    >
+                      <User size={15} className="text-white/80 group-hover:text-[#FF1717] transition-colors" />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-black" />
+                    </button>
+                  </div>
+                )
               ) : (
                 <div className="flex items-center gap-3 font-sans">
                   <button 
@@ -327,7 +375,7 @@ export default function Header({ transparent = false }: HeaderProps) {
                   </button>
                   <button 
                     onClick={handleRegisterClick} 
-                    className="bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-full transition-all cursor-pointer shadow-md shadow-[#FF1717]/25 hover:shadow-[#FF1717]/40"
+                    className="bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-full transition-all cursor-pointer shadow-md shadow-[#FF1717]/25 hover:shadow-[#FF1717]/40 active:scale-95"
                   >
                     Cadastrar-se
                   </button>
@@ -355,8 +403,36 @@ export default function Header({ transparent = false }: HeaderProps) {
               <div className="pt-4 border-t border-white/10 flex flex-col gap-2">
                 {user ? (
                   <>
-                    <div className="text-xs text-white/60">Conectado como: {user.email} ({user.role})</div>
-                    <button onClick={handleLogout} className="text-left text-red-400 text-sm font-medium">Sair</button>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>{user.email}</span>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        user.role === 'ADMIN' 
+                          ? 'bg-[#FF1717]/20 text-[#FF1717] border border-[#FF1717]/30' 
+                          : 'bg-white/10 text-white/70'
+                      }`}>
+                        {user.role === 'ADMIN' ? 'RACE CONTROL' : 'PILOTO'}
+                      </span>
+                    </div>
+                    {user.role === 'CLIENTE' && (
+                      <Link
+                        to="/apexpay"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="py-2 px-3 rounded-xl bg-white/5 border border-white/10 text-xs text-white flex items-center justify-between"
+                      >
+                        <span className="flex items-center gap-1.5"><Wallet size={13} className="text-[#FF1717]" /> Carteira ApexPay</span>
+                        <span className="text-white/40 text-[10px]">Acessar →</span>
+                      </Link>
+                    )}
+                    <button 
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleLogout();
+                      }} 
+                      className="text-left text-red-400 text-sm font-medium pt-1 cursor-pointer flex items-center gap-1"
+                    >
+                      <LogOut size={13} />
+                      <span>Sair da Conta</span>
+                    </button>
                   </>
                 ) : (
                   <div className="flex gap-2">
@@ -380,6 +456,12 @@ export default function Header({ transparent = false }: HeaderProps) {
 
         </div>
       </header>
+
+      {/* Modal de Perfil de Usuário / Administrador */}
+      <UserProfileModal
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+      />
     </>
   );
 }

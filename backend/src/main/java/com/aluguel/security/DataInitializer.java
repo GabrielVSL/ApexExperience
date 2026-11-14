@@ -2,6 +2,7 @@ package com.aluguel.security;
 
 import com.aluguel.models.*;
 import com.aluguel.repositories.*;
+import com.aluguel.services.QrCodePassService;
 import io.micronaut.context.event.StartupEvent;
 import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.inject.Singleton;
@@ -27,17 +28,26 @@ public class DataInitializer {
     private final AutomovelRepository automovelRepository;
     private final CircuitoRepository circuitoRepository;
     private final TrackSlotRepository trackSlotRepository;
+    private final PedidoRepository pedidoRepository;
+    private final TransacaoApexPayRepository transacaoRepository;
+    private final QrCodePassService qrCodePassService;
 
     public DataInitializer(UsuarioRepository usuarioRepository,
                            AgenteRepository agenteRepository,
                            AutomovelRepository automovelRepository,
                            CircuitoRepository circuitoRepository,
-                           TrackSlotRepository trackSlotRepository) {
+                           TrackSlotRepository trackSlotRepository,
+                           PedidoRepository pedidoRepository,
+                           TransacaoApexPayRepository transacaoRepository,
+                           QrCodePassService qrCodePassService) {
         this.usuarioRepository = usuarioRepository;
         this.agenteRepository = agenteRepository;
         this.automovelRepository = automovelRepository;
         this.circuitoRepository = circuitoRepository;
         this.trackSlotRepository = trackSlotRepository;
+        this.pedidoRepository = pedidoRepository;
+        this.transacaoRepository = transacaoRepository;
+        this.qrCodePassService = qrCodePassService;
     }
 
     @EventListener
@@ -118,7 +128,7 @@ public class DataInitializer {
             }
         }
 
-        // 2. Garante contas operacionais (Admin, Empresa e Banco) individualmente por e-mail
+        // 2. Garante exclusivamente a conta administrativa Apex Race Control e expurga contas legadas
         Usuario owner = ensureAgenteConta(
                 "admin@apex.com",
                 "Apex Race Control (Admin)",
@@ -126,20 +136,7 @@ public class DataInitializer {
                 "Apex HQ - Race Control Center",
                 "99887766000122"
         );
-        ensureAgenteConta(
-                "empresa@rentcars.com",
-                "Apex Pitlane Management",
-                "ROLE_EMPRESA",
-                "Av. Interlagos, 1000 - Box 01 - São Paulo, SP",
-                "11222333000144"
-        );
-        ensureAgenteConta(
-                "banco@rentcars.com",
-                "Apex Credit & Risk Bank",
-                "ROLE_BANCO",
-                "Av. Faria Lima, 3500 - São Paulo, SP",
-                "22333444000155"
-        );
+        limparDadosLegados(owner);
 
         // 3. Cadastra os 8 Supercarros únicos, alocando cada um em 3 pistas (= 3 carros distintos por pista)
         if (automovelRepository.count() == 0 && owner != null) {
@@ -180,10 +177,19 @@ public class DataInitializer {
             // Garante sincronização dos 3 circuitos caso os carros já existam de carga anterior
             sincronizarCircuitosExistentes(circuitosMap);
         }
+
+        // 4. Task automática: garante que toda sessão agendada possua QR Code criptográfico FIA Pass
+        qrCodePassService.executarTaskGeracaoQrCodes();
     }
 
     private Usuario ensureAgenteConta(String email, String nome, String role, String endereco, String cnpj) {
-        return usuarioRepository.findByEmail(email).orElseGet(() -> {
+        return usuarioRepository.findByEmail(email).map(u -> {
+            if (u.getTelefone() == null || u.getTelefone().isBlank()) {
+                u.setTelefone("11999999999");
+                return usuarioRepository.update(u);
+            }
+            return u;
+        }).orElseGet(() -> {
             Agente agente = new Agente();
             agente.setNome(nome);
             agente.setEmail(email);
@@ -191,6 +197,7 @@ public class DataInitializer {
             agente.setRole(role);
             agente.setEndereco(endereco);
             agente.setCnpj(cnpj);
+            agente.setTelefone("11999999999");
             Usuario salvo = agenteRepository.save(agente);
             log.info("Conta operacional inicializada: {} ({}).", email, role);
             return salvo;
@@ -248,5 +255,47 @@ public class DataInitializer {
                 automovelRepository.update(carro);
             }
         });
+    }
+
+    private void limparDadosLegados(Usuario adminOwner) {
+        List<String> emailsLegados = List.of("empresa@rentcars.com", "banco@rentcars.com");
+        Agente adminAgente = (adminOwner instanceof Agente) ? (Agente) adminOwner : null;
+
+        // Reatribui proprietário da frota para admin@apex.com
+        automovelRepository.findAll().forEach(carro -> {
+            if (carro.getProprietario() != null && carro.getProprietario().getEmail() != null
+                    && emailsLegados.stream().anyMatch(e -> e.equalsIgnoreCase(carro.getProprietario().getEmail()))) {
+                carro.setProprietario(adminOwner);
+                automovelRepository.update(carro);
+            }
+        });
+
+        // Normaliza status de pedidos legados e desvincula avaliadores antigos
+        pedidoRepository.findAll().forEach(pedido -> {
+            boolean alterado = false;
+            String st = pedido.getStatus();
+            if ("PENDENTE_EMPRESA".equalsIgnoreCase(st) || "PENDENTE_BANCO".equalsIgnoreCase(st) || "PENDENTE".equalsIgnoreCase(st)) {
+                pedido.setStatus("AGUARDANDO_APROVACAO");
+                alterado = true;
+            }
+            if (pedido.getAgenteAvaliador() != null && pedido.getAgenteAvaliador().getEmail() != null
+                    && emailsLegados.stream().anyMatch(e -> e.equalsIgnoreCase(pedido.getAgenteAvaliador().getEmail()))) {
+                pedido.setAgenteAvaliador(adminAgente);
+                alterado = true;
+            }
+            if (alterado) {
+                pedidoRepository.update(pedido);
+            }
+        });
+
+        // Remove contas legadas (empresa@rentcars.com e banco@rentcars.com)
+        for (String legacyEmail : emailsLegados) {
+            usuarioRepository.findByEmail(legacyEmail).ifPresent(legacyUser -> {
+                transacaoRepository.findByUsuarioIdOrderByDataHoraDesc(legacyUser.getId())
+                        .forEach(transacaoRepository::delete);
+                usuarioRepository.delete(legacyUser);
+                log.info("Conta legada expurgada do banco: {}", legacyEmail);
+            });
+        }
     }
 }

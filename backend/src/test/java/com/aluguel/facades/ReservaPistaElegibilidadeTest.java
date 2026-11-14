@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -59,21 +60,30 @@ class ReservaPistaElegibilidadeTest {
         when(pedidoRepository.save(any(Pedido.class))).thenAnswer(i -> i.getArgument(0));
     }
 
+    private LocalDateTime proximoDiaAberto(int minDias) {
+        LocalDate d = LocalDate.now().plusDays(minDias);
+        if (d.getDayOfWeek() == DayOfWeek.MONDAY) {
+            d = d.plusDays(1);
+        }
+        return d.atTime(10, 0);
+    }
+
     @Test
     @DisplayName("Deve permitir agendamento de Track Experience quando piloto tem CNH válida e idade >= 21")
     void devePermitirTrackExperienceComCnhValida() {
         Pedido pedido = new Pedido();
         pedido.setAutomovel(automovel);
         pedido.setTipoServico("TRACK_EXPERIENCE");
-        pedido.setDataInicio(LocalDateTime.now().plusDays(2));
-        pedido.setDataFim(LocalDateTime.now().plusDays(3));
+        LocalDateTime inicio = proximoDiaAberto(2);
+        pedido.setDataInicio(inicio);
+        pedido.setDataFim(inicio.plusDays(1));
 
         Pedido criado = pedidoFacade.criarPedido(pedido, "piloto@apex.com");
 
         assertNotNull(criado);
         assertNotNull(criado.getTrackingCode());
         assertTrue(criado.getTrackingCode().startsWith("APX-"));
-        assertEquals("PENDENTE_EMPRESA", criado.getStatus());
+        assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
     }
 
     @Test
@@ -84,8 +94,9 @@ class ReservaPistaElegibilidadeTest {
         Pedido pedido = new Pedido();
         pedido.setAutomovel(automovel);
         pedido.setTipoServico("TRACK_EXPERIENCE");
-        pedido.setDataInicio(LocalDateTime.now().plusDays(2));
-        pedido.setDataFim(LocalDateTime.now().plusDays(3));
+        LocalDateTime inicio = proximoDiaAberto(2);
+        pedido.setDataInicio(inicio);
+        pedido.setDataFim(inicio.plusDays(1));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
                 pedidoFacade.criarPedido(pedido, "piloto@apex.com")
@@ -101,8 +112,9 @@ class ReservaPistaElegibilidadeTest {
         Pedido pedido = new Pedido();
         pedido.setAutomovel(automovel);
         pedido.setTipoServico("VISITA_BOX");
-        pedido.setDataInicio(LocalDateTime.now().plusDays(2));
-        pedido.setDataFim(LocalDateTime.now().plusDays(3));
+        LocalDateTime inicio = proximoDiaAberto(2);
+        pedido.setDataInicio(inicio);
+        pedido.setDataFim(inicio.plusDays(1));
 
         Pedido criado = pedidoFacade.criarPedido(pedido, "piloto@apex.com");
         assertNotNull(criado);
@@ -116,7 +128,8 @@ class ReservaPistaElegibilidadeTest {
         interlagos.setId("interlagos");
         interlagos.setNome("Interlagos");
 
-        TrackSlot slotLotado = new TrackSlot(interlagos, LocalDate.now().plusDays(2), "MANHA", 10);
+        LocalDateTime inicio = proximoDiaAberto(2);
+        TrackSlot slotLotado = new TrackSlot(interlagos, inicio.toLocalDate(), "MANHA", 10);
         slotLotado.setId(100L);
         slotLotado.setVagasOcupadas(10); // Esgotado
 
@@ -125,8 +138,8 @@ class ReservaPistaElegibilidadeTest {
         Pedido pedido = new Pedido();
         pedido.setAutomovel(automovel);
         pedido.setTipoServico("TRACK_EXPERIENCE");
-        pedido.setDataInicio(LocalDateTime.now().plusDays(2));
-        pedido.setDataFim(LocalDateTime.now().plusDays(3));
+        pedido.setDataInicio(inicio);
+        pedido.setDataFim(inicio.plusDays(1));
         pedido.setTrackSlot(slotLotado);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->

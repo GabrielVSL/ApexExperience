@@ -1,6 +1,7 @@
 package com.aluguel.queue;
 
 import io.micronaut.serde.annotation.Serdeable;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Serdeable
@@ -13,6 +14,10 @@ public class ReservaMensagem {
     private Long slotId;
     private LocalDateTime dataInicio;
     private LocalDateTime dataFim;
+    private String formaPagamento;
+    private BigDecimal valorTotal;
+    private String cnhInformada;
+    private String dataNascimentoInformada;
     private int tentativas = 0;
     private LocalDateTime dataHoraEnfileiramento;
     private String motivoFalha;
@@ -124,5 +129,37 @@ public class ReservaMensagem {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getFormaPagamento() {
+        return formaPagamento;
+    }
+
+    public void setFormaPagamento(String formaPagamento) {
+        this.formaPagamento = formaPagamento;
+    }
+
+    public BigDecimal getValorTotal() {
+        return valorTotal;
+    }
+
+    public void setValorTotal(BigDecimal valorTotal) {
+        this.valorTotal = valorTotal;
+    }
+
+    public String getCnhInformada() {
+        return cnhInformada;
+    }
+
+    public void setCnhInformada(String cnhInformada) {
+        this.cnhInformada = cnhInformada;
+    }
+
+    public String getDataNascimentoInformada() {
+        return dataNascimentoInformada;
+    }
+
+    public void setDataNascimentoInformada(String dataNascimentoInformada) {
+        this.dataNascimentoInformada = dataNascimentoInformada;
     }
 }

@@ -7,6 +7,7 @@ import io.micronaut.serde.annotation.Serdeable;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Serdeable
 @Entity
@@ -26,7 +27,7 @@ public class Usuario {
     private String senha;
 
     @Column(nullable = false)
-    private String role; // ROLE_CLIENTE, ROLE_EMPRESA, ROLE_BANCO, ROLE_ADMIN
+    private String role; // ROLE_CLIENTE, ROLE_ADMIN
 
     private String nome;
     private String endereco;
@@ -51,6 +52,23 @@ public class Usuario {
     @Column
     private LocalDate dataNascimento;
 
+    // --- 📲 RECUPERAÇÃO DE SENHA VIA WHATSAPP (100% GRATUITO / SEM MENSALIDADE) ---
+    @Column(length = 25)
+    private String telefone;
+
+    @Column(length = 10)
+    private String codigoRecuperacao;
+
+    @Column
+    private LocalDateTime codigoRecuperacaoExpiraEm;
+
+    @Column
+    private Integer tentativasRecuperacao = 0;
+
+    // --- 🛡️ GESTÃO ADMINISTRATIVA RACE CONTROL ---
+    @Column(nullable = false, length = 25)
+    private String statusConta = "ATIVO"; // ATIVO, BLOQUEADO_RESERVAS, SUSPENSO
+
     public Usuario() {}
 
     // Regra de Negócio: Cliente com saldo negativo ou marcado como inadimplente não pode criar reservas
@@ -58,23 +76,13 @@ public class Usuario {
         return "INADIMPLENTE".equalsIgnoreCase(statusFinanceiro) || (saldoCarteira != null && saldoCarteira.compareTo(BigDecimal.ZERO) < 0);
     }
 
-    // Regra de Negócio: Programa de Fidelidade ApexPay por Depósito Acumulado
+    // ApexPay opera como gateway financeiro simulado da plataforma (sem descontos artificiais por tier de depósito)
     public String getTierFidelidade() {
-        if (totalDepositadoHistorico == null) return "BRONZE";
-        if (totalDepositadoHistorico.compareTo(new BigDecimal("50000")) >= 0) return "APEX_BLACK";
-        if (totalDepositadoHistorico.compareTo(new BigDecimal("25000")) >= 0) return "GOLD";
-        if (totalDepositadoHistorico.compareTo(new BigDecimal("10000")) >= 0) return "SILVER";
-        return "BRONZE";
+        return "CONTA_VERIFICADA";
     }
 
     public BigDecimal getFatorDesconto() {
-        String tier = getTierFidelidade();
-        return switch (tier) {
-            case "APEX_BLACK" -> new BigDecimal("0.15"); // 15% de desconto
-            case "GOLD" -> new BigDecimal("0.10");       // 10% de desconto
-            case "SILVER" -> new BigDecimal("0.05");     // 5% de desconto
-            default -> BigDecimal.ZERO;
-        };
+        return BigDecimal.ZERO;
     }
 
     public void creditarSaldo(BigDecimal valor) {
@@ -125,4 +133,15 @@ public class Usuario {
     public void setCnhCategoria(String cnhCategoria) { this.cnhCategoria = cnhCategoria; }
     public LocalDate getDataNascimento() { return dataNascimento; }
     public void setDataNascimento(LocalDate dataNascimento) { this.dataNascimento = dataNascimento; }
+
+    public String getTelefone() { return telefone; }
+    public void setTelefone(String telefone) { this.telefone = telefone; }
+    public String getCodigoRecuperacao() { return codigoRecuperacao; }
+    public void setCodigoRecuperacao(String codigoRecuperacao) { this.codigoRecuperacao = codigoRecuperacao; }
+    public LocalDateTime getCodigoRecuperacaoExpiraEm() { return codigoRecuperacaoExpiraEm; }
+    public void setCodigoRecuperacaoExpiraEm(LocalDateTime codigoRecuperacaoExpiraEm) { this.codigoRecuperacaoExpiraEm = codigoRecuperacaoExpiraEm; }
+    public String getStatusConta() { return statusConta != null ? statusConta : "ATIVO"; }
+    public void setStatusConta(String statusConta) { this.statusConta = statusConta; }
+    public Integer getTentativasRecuperacao() { return tentativasRecuperacao != null ? tentativasRecuperacao : 0; }
+    public void setTentativasRecuperacao(Integer tentativasRecuperacao) { this.tentativasRecuperacao = tentativasRecuperacao; }
 }

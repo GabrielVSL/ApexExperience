@@ -4,19 +4,18 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Clock,
   Check,
-  ShieldCheck,
-  Flag,
-  Gauge,
-  Sparkles,
-  Wallet,
+  LogIn,
+  UserPlus,
+  KeyRound,
   AlertTriangle,
   Loader2,
-  Fuel,
-  LogIn,
-  KeyRound,
-  CalendarClock,
+  CreditCard,
+  Zap,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { toast } from '@/store/useToastStore';
@@ -59,61 +58,56 @@ export interface TrackSlotItem {
   taxaAdicionalTurno: number;
 }
 
-export type ServiceType = 'VISITA_BOX' | 'FAST_LAP' | 'TRACK_EXPERIENCE' | 'PACOTE_VIP';
+export type ServiceType = 'TRACK_EXPERIENCE' | 'FAST_LAP' | 'PACOTE_VIP' | 'VISITA_BOX';
 
 interface ServiceOption {
   id: ServiceType;
   title: string;
-  badge?: string;
+  badge: string;
   description: string;
   multiplier: number;
   fixedPrice?: number;
   requiresCar: boolean;
   requiresCnh: boolean;
-  icon: typeof Flag;
 }
 
 const SERVICE_OPTIONS: ServiceOption[] = [
   {
-    id: 'VISITA_BOX',
-    title: 'Visita ao Box & Paddock VIP',
-    badge: 'Isento CNH',
-    description: 'Tour guiado pelos boxes, telemetria ao vivo, lounge VIP e acesso ao pitlane.',
-    multiplier: 0,
-    fixedPrice: 890,
-    requiresCar: false,
-    requiresCnh: false,
-    icon: ShieldCheck,
+    id: 'TRACK_EXPERIENCE',
+    title: 'Track Experience (Pilotar)',
+    badge: 'Mais Escolhido',
+    description: 'Você no comando com rádio de box e telemetria.',
+    multiplier: 1.0,
+    requiresCar: true,
+    requiresCnh: true,
   },
   {
     id: 'FAST_LAP',
     title: 'Fast Lap (Carona c/ Piloto)',
     badge: 'Isento CNH',
-    description: '2 voltas rápidas no banco do carona com piloto profissional levando o supercarro ao limite.',
+    description: '2 voltas rápidas no limite com piloto profissional.',
     multiplier: 0.55,
     requiresCar: true,
     requiresCnh: false,
-    icon: Flag,
-  },
-  {
-    id: 'TRACK_EXPERIENCE',
-    title: 'Track Experience (Pilotar)',
-    badge: 'Mais Escolhido',
-    description: 'Você no volante em bateria exclusiva com briefing técnico, rádio no capacete e VBOX.',
-    multiplier: 1.0,
-    requiresCar: true,
-    requiresCnh: true,
-    icon: Gauge,
   },
   {
     id: 'PACOTE_VIP',
     title: 'Pacote VIP Full Day',
     badge: 'Box Exclusivo',
-    description: 'Experiência estendida de pista com telemetria 4K comentada, box privativo e suporte dedicado.',
+    description: 'Acesso VIP ilimitado, box privativo e telemetria 4K.',
     multiplier: 1.7,
     requiresCar: true,
     requiresCnh: true,
-    icon: Sparkles,
+  },
+  {
+    id: 'VISITA_BOX',
+    title: 'Visita ao Paddock & Pitlane',
+    badge: 'Isento CNH',
+    description: 'Tour guiado pelos boxes e fotos exclusivas.',
+    multiplier: 0,
+    fixedPrice: 890,
+    requiresCar: false,
+    requiresCnh: false,
   },
 ];
 
@@ -129,9 +123,9 @@ const CIRCUIT_COUNTRY_CODES: Record<string, string> = {
 };
 
 const TURNO_LABELS: Record<string, string> = {
-  MANHA: 'Manhã · 08h–12h',
-  TARDE: 'Tarde · 13h–17h',
-  NOTURNO: 'Noturno · 19h–22h',
+  MANHA: 'Manhã · 08h às 12h',
+  TARDE: 'Tarde · 13h às 17h',
+  NOTURNO: 'Noturno · 19h às 22h',
 };
 
 interface SessionBookingModalProps {
@@ -145,11 +139,14 @@ interface SessionBookingModalProps {
 }
 
 interface UserProfile {
+  nome?: string;
+  email?: string;
+  telefone?: string;
   saldoCarteira: number;
-  tierFidelidade: string;
-  porcentagemDesconto: number;
+  statusFinanceiro?: string;
   inadimplente: boolean;
   cnhNumero?: string;
+  cnhCategoria?: string;
   dataNascimento?: string;
 }
 
@@ -160,15 +157,16 @@ export function SessionBookingModal({
   initialCircuitId = null,
   circuitCars = [],
   lockCircuit = false,
-  lockCar = false,
 }: SessionBookingModalProps) {
   const navigate = useNavigate();
   const { user, token } = useAuthStore();
   const { formatPrice } = useCurrencyStore();
 
+  const [fleetCars, setFleetCars] = useState<Automovel[]>([]);
   const [selectedService, setSelectedService] = useState<ServiceType>('TRACK_EXPERIENCE');
   const [selectedCar, setSelectedCar] = useState<Automovel | null>(initialCar);
   const [selectedCircuitId, setSelectedCircuitId] = useState<string>(initialCircuitId || 'nurburgring');
+  const [carCarouselIndex, setCarCarouselIndex] = useState<number>(0);
 
   const [slots, setSlots] = useState<TrackSlotItem[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -176,35 +174,59 @@ export function SessionBookingModal({
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
 
   const [formaPagamento, setFormaPagamento] = useState<'CARTEIRA_APEXPAY' | 'FATURA_APEXPAY'>('CARTEIRA_APEXPAY');
-  const [cnhInput, setCnhInput] = useState('');
-  const [dobInput, setDobInput] = useState('1995-05-15');
   const [perfil, setPerfil] = useState<UserProfile | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdBooking, setCreatedBooking] = useState<{ trackingCode: string; status: string; valorFinal: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sincroniza carro e circuito iniciais ao abrir o modal
+  // Busca lista de carros da frota caso não tenham sido passados
+  useEffect(() => {
+    if (!isOpen) return;
+    if (circuitCars && circuitCars.length > 0) {
+      setFleetCars(circuitCars);
+      return;
+    }
+    api
+      .get('/api/automoveis')
+      .then((res) => {
+        const list: Automovel[] = Array.isArray(res.data) ? res.data : [];
+        setFleetCars(list);
+      })
+      .catch(() => setFleetCars([]));
+  }, [isOpen, circuitCars]);
+
+  const displayCars = useMemo(() => {
+    if (circuitCars && circuitCars.length > 0) return circuitCars;
+    if (fleetCars.length > 0) return fleetCars;
+    if (initialCar) return [initialCar];
+    return [];
+  }, [circuitCars, fleetCars, initialCar]);
+
+  // Sincroniza estado inicial ao abrir
   useEffect(() => {
     if (!isOpen) return;
     setCreatedBooking(null);
     setErrorMsg(null);
 
-    if (initialCar) {
-      setSelectedCar(initialCar);
+    const carToUse = initialCar || (displayCars.length > 0 ? displayCars[0] : null);
+    if (carToUse) {
+      setSelectedCar(carToUse);
+      const idx = displayCars.findIndex((c) => c.id === carToUse.id);
+      setCarCarouselIndex(idx >= 0 ? idx : 0);
+
       const carCircuit =
         initialCircuitId ||
-        initialCar.circuitosDisponiveis?.[0]?.id ||
-        initialCar.circuito?.id ||
+        carToUse.circuitosDisponiveis?.[0]?.id ||
+        carToUse.circuito?.id ||
         'nurburgring';
       setSelectedCircuitId(carCircuit);
     } else if (initialCircuitId) {
       setSelectedCircuitId(initialCircuitId);
-      setSelectedCar(circuitCars.length > 0 ? circuitCars[0] : null);
     }
-  }, [isOpen, initialCar, initialCircuitId, circuitCars]);
+  }, [isOpen, initialCar, initialCircuitId, displayCars]);
 
-  // Carrega perfil + saldo ApexPay se usuário estiver logado
+  // Carrega perfil do usuário
   useEffect(() => {
     if (!isOpen || !token || !user) {
       setPerfil(null);
@@ -212,15 +234,11 @@ export function SessionBookingModal({
     }
     api
       .get('/api/usuarios/me')
-      .then((res) => {
-        setPerfil(res.data);
-        if (res.data?.cnhNumero) setCnhInput(res.data.cnhNumero);
-        if (res.data?.dataNascimento) setDobInput(res.data.dataNascimento);
-      })
+      .then((res) => setPerfil(res.data))
       .catch(() => setPerfil(null));
   }, [isOpen, token, user]);
 
-  // Carrega os TrackSlots reais do circuito selecionado
+  // Carrega slots do circuito selecionado
   useEffect(() => {
     if (!isOpen || !selectedCircuitId) return;
     setLoadingSlots(true);
@@ -238,42 +256,61 @@ export function SessionBookingModal({
           setSelectedSlotId(null);
         }
       })
-      .catch(() => {
-        setSlots([]);
-      })
+      .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false));
   }, [isOpen, selectedCircuitId]);
 
-  const availableCircuitsForCar = useMemo(() => {
-    if (lockCircuit || !selectedCar) {
-      const found = CIRCUITS.find((c) => c.id === selectedCircuitId);
-      return found ? [{ id: found.id, nome: found.name }] : [];
+  // Carro em foco no carrossel
+  const viewedCar = displayCars[carCarouselIndex] || selectedCar || null;
+  const isViewedCarSelected = selectedCar && viewedCar && selectedCar.id === viewedCar.id;
+
+  const handleNextCar = () => {
+    if (displayCars.length <= 1) return;
+    setCarCarouselIndex((prev) => (prev + 1) % displayCars.length);
+  };
+
+  const handlePrevCar = () => {
+    if (displayCars.length <= 1) return;
+    setCarCarouselIndex((prev) => (prev - 1 + displayCars.length) % displayCars.length);
+  };
+
+  const handleSelectViewedCar = (car: Automovel) => {
+    setSelectedCar(car);
+    if (car.circuitosDisponiveis && car.circuitosDisponiveis.length > 0) {
+      const match = car.circuitosDisponiveis.some((c) => c.id === selectedCircuitId);
+      if (!match) {
+        setSelectedCircuitId(car.circuitosDisponiveis[0].id);
+      }
     }
-    if (selectedCar.circuitosDisponiveis && selectedCar.circuitosDisponiveis.length > 0) {
+  };
+
+  const availableCircuits = useMemo(() => {
+    if (selectedCar?.circuitosDisponiveis && selectedCar.circuitosDisponiveis.length > 0) {
       return selectedCar.circuitosDisponiveis;
     }
-    if (selectedCar.circuito) {
+    if (selectedCar?.circuito) {
       return [selectedCar.circuito];
     }
-    return [{ id: 'nurburgring', nome: 'Nürburgring Nordschleife' }];
-  }, [lockCircuit, selectedCar, selectedCircuitId]);
+    return CIRCUITS.map((c) => ({ id: c.id, nome: c.name }));
+  }, [selectedCar]);
 
+  // Datas únicas disponíveis
   const uniqueDates = useMemo(() => {
-    const set = Array.from(new Set(slots.map((s) => s.data)));
-    return set.slice(0, 7);
+    return Array.from(new Set(slots.map((s) => s.data)));
   }, [slots]);
 
+  // Turnos para a data selecionada
   const slotsForSelectedDate = useMemo(() => {
     return slots.filter((s) => s.data === selectedDate);
   }, [slots, selectedDate]);
 
   const activeSlot = useMemo(
-    () => slots.find((s) => s.id === selectedSlotId) || null,
-    [slots, selectedSlotId]
+    () => slots.find((s) => s.id === selectedSlotId) || slotsForSelectedDate[0] || null,
+    [slots, selectedSlotId, slotsForSelectedDate]
   );
 
   const activeService = useMemo(
-    () => SERVICE_OPTIONS.find((s) => s.id === selectedService) || SERVICE_OPTIONS[2],
+    () => SERVICE_OPTIONS.find((s) => s.id === selectedService) || SERVICE_OPTIONS[0],
     [selectedService]
   );
 
@@ -291,45 +328,37 @@ export function SessionBookingModal({
     }
     const shiftFee = activeSlot?.taxaAdicionalTurno ? Number(activeSlot.taxaAdicionalTurno) : 0;
     const subtotal = Math.round((base + shiftFee) * 100) / 100;
-    const discountPct = perfil?.porcentagemDesconto || 0;
-    const discountVal = Math.round(subtotal * (discountPct / 100) * 100) / 100;
-    const finalPrice = Math.max(0, Math.round((subtotal - discountVal) * 100) / 100);
-    return { base, shiftFee, subtotal, discountPct, discountVal, finalPrice };
-  }, [activeService, selectedCar, activeSlot, perfil]);
+    return { base, shiftFee, subtotal, finalPrice: subtotal };
+  }, [activeService, selectedCar, activeSlot]);
 
   const handleConfirm = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
     if (!token || !user) {
-      toast.info('Faça login ou crie sua conta de piloto para concluir o agendamento.');
+      toast.info('Faça login ou cadastre-se para reservar sua sessão.');
       onClose();
       navigate('/login', { state: { from: window.location.pathname } });
       return;
     }
 
     if (user.role !== 'CLIENTE') {
-      setErrorMsg('Apenas contas de Piloto/Cliente podem agendar sessões. Crie uma conta de Cliente no menu Cadastrar-se.');
+      setErrorMsg('Apenas contas de Piloto podem reservar sessões.');
       return;
     }
 
     if (perfil?.inadimplente) {
-      setErrorMsg('Sua conta ApexPay está inadimplente. Quite o débito na carteira antes de agendar novas sessões.');
+      setErrorMsg('Sua conta possui pendências no ApexPay. Regularize para agendar.');
       return;
     }
 
     if (!activeSlot) {
-      setErrorMsg('Selecione uma data e turno disponíveis.');
+      setErrorMsg('Selecione uma data e turno válidos.');
       return;
     }
 
     if (activeService.requiresCar && !selectedCar) {
-      setErrorMsg('Selecione o supercarro homologado para a sessão.');
-      return;
-    }
-
-    if (activeService.requiresCnh && !cnhInput.trim() && !perfil?.cnhNumero) {
-      setErrorMsg('Informe sua CNH (11 dígitos) para serviços de pilotagem ou use o atalho de homologação.');
+      setErrorMsg('Selecione um supercarro no carrossel.');
       return;
     }
 
@@ -353,9 +382,9 @@ export function SessionBookingModal({
         payload.automovel = { id: selectedCar.id };
       }
 
-      if (activeService.requiresCnh) {
-        if (cnhInput.trim()) payload.cnhInformada = cnhInput.trim();
-        if (dobInput) payload.dataNascimentoInformada = dobInput;
+      if (activeService.requiresCnh && perfil?.cnhNumero) {
+        payload.cnhInformada = perfil.cnhNumero;
+        if (perfil.dataNascimento) payload.dataNascimentoInformada = perfil.dataNascimento;
       }
 
       const res = await api.post('/api/pedidos', payload);
@@ -364,7 +393,7 @@ export function SessionBookingModal({
         status: res.data.status,
         valorFinal: res.data.valorFinal ?? pricing.finalPrice,
       });
-      toast.success('Sessão registrada no sistema!');
+      toast.success('Sessão registrada com sucesso no box!');
     } catch (err: any) {
       const msg = err.response?.data?.message || 'Não foi possível concluir o agendamento.';
       setErrorMsg(msg);
@@ -376,554 +405,504 @@ export function SessionBookingModal({
 
   if (!isOpen) return null;
 
-  const carSpecs = selectedCar ? getCarDisplaySpecs(selectedCar) : null;
+  const viewedSpecs = viewedCar ? getCarDisplaySpecs(viewedCar) : null;
+  const isAuthenticated = Boolean(token && user);
+
+  // Formata data ISO para "Sex, 15 Nov"
+  const formatDateFriendly = (isoDate: string) => {
+    if (!isoDate) return 'Selecione a data';
+    const parsed = new Date(`${isoDate}T12:00:00`);
+    const dowNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    return `${dowNames[parsed.getDay()]}, ${parsed.getDate()} ${monthNames[parsed.getMonth()]}`;
+  };
 
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-md font-sans text-white"
+        className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-5 md:p-8 bg-black/85 backdrop-blur-xl font-sans text-white"
         onClick={onClose}
       >
         <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 16 }}
+          initial={{ opacity: 0, scale: 0.98, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 16 }}
-          transition={{ duration: 0.2 }}
+          exit={{ opacity: 0, scale: 0.98, y: 12 }}
+          transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-4xl max-h-[92vh] bg-[#0B0D12] border border-white/10 rounded-3xl shadow-[0_25px_90px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col"
+          className="relative w-full max-w-6xl h-[90vh] min-h-[620px] max-h-[820px] bg-[#0E1015] border border-white/10 rounded-[28px] sm:rounded-[36px] shadow-[0_35px_100px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col lg:flex-row"
         >
-          {/* Cabeçalho */}
-          <div className="px-6 py-4 sm:py-5 border-b border-white/10 bg-[#08090C] flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-3">
-              <CountryFlag
-                countryCode={CIRCUIT_COUNTRY_CODES[selectedCircuitId] || 'DE'}
-                className="w-6 h-4 rounded-sm shrink-0"
-              />
-              <div>
-                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-[#FF1717]">
-                  Arrive & Drive · Sessão Cronometrada
-                </p>
-                <h2 className="text-lg sm:text-xl font-medium text-white tracking-tight">
-                  {activeCircuitMeta.name}
-                  {selectedCar && activeService.requiresCar ? ` · ${selectedCar.marca} ${selectedCar.modelo}` : ''}
-                </h2>
+          {/* ========================================================
+              COLUNA ESQUERDA: FORMULÁRIO CLEAN ESTILO LUXO (SEM CARDS EM PILHA)
+             ======================================================== */}
+          <div className="w-full lg:w-[48%] flex flex-col justify-between p-6 sm:p-9 relative bg-[#0B0D12] overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-r border-white/10">
+            {/* Topo do Formulário: Botão Minimalista de Voltar */}
+            <div className="shrink-0 mb-5">
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-white/70 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+                  title="Voltar"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <CountryFlag
+                    countryCode={CIRCUIT_COUNTRY_CODES[selectedCircuitId] || 'DE'}
+                    className="w-5 h-3.5 rounded-sm shrink-0"
+                  />
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-white/60">
+                    {activeCircuitMeta.name}
+                  </span>
+                </div>
               </div>
+
+              <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-white">
+                Agendar Sessão
+              </h2>
+              <p className="text-xs text-white/50 mt-1 leading-relaxed">
+                Reserve seu box exclusivo e prepare-se para acelerar no traçado oficial.
+              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-              aria-label="Fechar"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Corpo com Scroll */}
-          <div className="p-5 sm:p-7 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+            {/* Tela de Sucesso / Voucher Emitido */}
             {createdBooking ? (
-              <div className="py-10 text-center space-y-5 max-w-md mx-auto">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto">
+              <div className="my-auto py-8 text-center space-y-4">
+                <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
                   <Check size={28} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-emerald-400 mb-1">
-                    Sessão Confirmada na Pista
+                  <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#FF1717]">
+                    Box Homologado
                   </p>
-                  <h3 className="text-2xl font-medium text-white tracking-tight">
-                    Credencial Emitida!
-                  </h3>
-                  <p className="text-xs text-white/65 mt-2 leading-relaxed">
-                    Seu supercarro estará abastecido e aquecido no box de{' '}
-                    <strong className="text-white">{activeCircuitMeta.name}</strong> no turno selecionado.
+                  <h3 className="text-xl font-bold text-white mt-1">Sessão Confirmada!</h3>
+                  <p className="text-xs text-white/60 mt-1 font-mono">
+                    Protocolo: <span className="text-white font-semibold">{createdBooking.trackingCode}</span>
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-left space-y-2 text-xs font-mono">
-                  <div className="flex justify-between">
-                    <span className="text-white/45">Protocolo</span>
-                    <span className="text-white font-semibold">{createdBooking.trackingCode}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/45">Modalidade</span>
-                    <span className="text-white">{activeService.title}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/45">Data / Turno</span>
-                    <span className="text-emerald-400">
-                      {activeSlot?.data.split('-').reverse().join('/')} · {activeSlot?.turno}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t border-white/10 pt-2">
-                    <span className="text-white/45">Valor Final</span>
-                    <span className="text-white font-bold">{formatPrice(createdBooking.valorFinal)}</span>
-                  </div>
+                <div className="py-3 border-y border-white/10 text-xs text-white/70 space-y-1">
+                  <p>
+                    Supercarro:{' '}
+                    <strong className="text-white">
+                      {selectedCar ? `${selectedCar.marca} ${selectedCar.modelo}` : 'Paddock Pass'}
+                    </strong>
+                  </p>
+                  <p>
+                    Data:{' '}
+                    <strong className="text-white">
+                      {formatDateFriendly(activeSlot?.data || '')} ({activeSlot?.turno})
+                    </strong>
+                  </p>
+                  <p className="text-[#FF1717] font-semibold text-sm pt-1">
+                    Total: {formatPrice(createdBooking.valorFinal)}
+                  </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <div className="flex gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={() => {
                       onClose();
                       navigate('/meus-alugueis');
                     }}
-                    className="flex-1 bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-medium py-3 rounded-full cursor-pointer transition-colors"
+                    className="flex-1 py-3 rounded-xl bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
                   >
                     Ver Minhas Sessões
                   </button>
                   <button
                     type="button"
                     onClick={onClose}
-                    className="flex-1 bg-white/5 hover:bg-white/10 text-white text-xs font-medium py-3 rounded-full border border-white/10 cursor-pointer transition-colors"
+                    className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-all cursor-pointer"
                   >
                     Fechar
                   </button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleConfirm} className="space-y-6">
-                {/* Faixa informativa rápida sobre o que está incluso */}
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5 rounded-xl bg-white/[0.025] border border-white/[0.07] text-[11px] text-white/65">
-                  <span className="flex items-center gap-1.5">
-                    <Fuel size={13} className="text-[#FF1717]" /> Gasolina 102 oct & Pneus Cup 2 R inclusos
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <ShieldCheck size={13} className="text-emerald-400" /> Seguro Base de Pista + Telemetria VBOX
-                  </span>
-                </div>
-
-                {/* Alerta de Inadimplência caso o piloto esteja com saldo negativo */}
-                {perfil?.inadimplente && (
-                  <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="text-rose-400 shrink-0 mt-0.5" size={18} />
-                      <div>
-                        <p className="text-xs font-semibold text-rose-200">
-                          Conta ApexPay Inadimplente ({formatPrice(perfil.saldoCarteira)})
-                        </p>
-                        <p className="text-[11px] text-rose-300/80 mt-0.5">
-                          Novas reservas ficam bloqueadas até a quitação do saldo devedor. Juros diários de 0,1% incidem sobre débitos vencidos.
-                        </p>
-                      </div>
+              <div className="relative flex-1 flex flex-col justify-between">
+                {/* ========================================================
+                    BLUR ELEGANTE: QUANDO O USUÁRIO NÃO ESTÁ LOGADO
+                   ======================================================== */}
+                {!isAuthenticated && (
+                  <div className="absolute inset-0 z-30 backdrop-blur-xl bg-[#0B0D12]/85 rounded-2xl flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-12 h-12 rounded-full bg-[#FF1717]/15 border border-[#FF1717]/30 flex items-center justify-center text-[#FF1717] mb-3">
+                      <KeyRound size={20} />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        navigate('/apexpay');
-                      }}
-                      className="shrink-0 bg-rose-500 hover:bg-rose-400 text-white text-xs font-medium px-4 py-2 rounded-full cursor-pointer transition-colors"
-                    >
-                      Quitar no ApexPay
-                    </button>
-                  </div>
-                )}
-
-                {/* 1. Escolha o Autódromo (quando aberto pela Frota, mostra os 3 circuitos onde o carro corre) */}
-                {!lockCircuit && availableCircuitsForCar.length > 0 && (
-                  <div>
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-white/55 block mb-2.5">
-                      1. Autódromo Homologado para este Modelo ({availableCircuitsForCar.length} boxes)
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {availableCircuitsForCar.map((c) => {
-                        const isActive = c.id === selectedCircuitId;
-                        return (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => setSelectedCircuitId(c.id)}
-                            className={`p-3 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${
-                              isActive
-                                ? 'border-[#FF1717] bg-[#FF1717]/10 text-white'
-                                : 'border-white/10 bg-white/[0.03] hover:border-white/25 text-white/70'
-                            }`}
-                          >
-                            <CountryFlag
-                              countryCode={CIRCUIT_COUNTRY_CODES[c.id] || 'DE'}
-                              className="w-5 h-3.5 rounded-[2px] shrink-0"
-                            />
-                            <span className="text-xs font-medium truncate">{c.nome}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* 2. Escolha da Experiência / Modalidade */}
-                <div>
-                  <label className="text-[11px] font-mono uppercase tracking-wider text-white/55 block mb-2.5">
-                    {lockCircuit ? '1.' : '2.'} Experiência na Bateria
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {SERVICE_OPTIONS.map((srv) => {
-                      const isSelected = selectedService === srv.id;
-                      const IconComp = srv.icon;
-                      const estPrice = srv.fixedPrice
-                        ? srv.fixedPrice
-                        : selectedCar?.precoPorDia
-                        ? Number(selectedCar.precoPorDia) * srv.multiplier
-                        : 0;
-                      return (
-                        <button
-                          key={srv.id}
-                          type="button"
-                          onClick={() => setSelectedService(srv.id)}
-                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                            isSelected
-                              ? 'border-[#FF1717] bg-[#FF1717]/10 ring-1 ring-[#FF1717]/40'
-                              : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-1.5 w-full">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                                  isSelected ? 'bg-[#FF1717] text-white' : 'bg-white/10 text-white/60'
-                                }`}
-                              >
-                                <IconComp size={14} />
-                              </div>
-                              <span className="text-xs font-medium text-white">{srv.title}</span>
-                            </div>
-                            {srv.badge && (
-                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/75 shrink-0">
-                                {srv.badge}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-white/60 leading-relaxed mb-2">{srv.description}</p>
-                          <span className="text-[11px] font-mono text-[#FF1717] font-medium">
-                            {estPrice > 0 ? formatPrice(estPrice) : 'Selecione um veículo'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 3. Escolha do Supercarro no Box (quando aberto por /pistas e o serviço usa carro) */}
-                {activeService.requiresCar && !lockCar && circuitCars.length > 0 && (
-                  <div>
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-white/55 block mb-2.5">
-                      2. Escolha o Supercarro do Box ({circuitCars.length} disponíveis)
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {circuitCars.map((car) => {
-                        const isCarSelected = selectedCar?.id === car.id;
-                        const specs = getCarDisplaySpecs(car);
-                        return (
-                          <button
-                            key={car.id}
-                            type="button"
-                            onClick={() => setSelectedCar(car)}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                              isCarSelected
-                                ? 'border-[#FF1717] bg-[#FF1717]/10 ring-1 ring-[#FF1717]/40'
-                                : 'border-white/10 bg-transparent hover:bg-white/[0.04] hover:border-white/25'
-                            }`}
-                          >
-                            <div className="aspect-[16/9] w-full flex items-center justify-center p-1 mb-2">
-                              <img
-                                src={resolveStudioCarImage(car)}
-                                alt={car.modelo}
-                                className="w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.9)]"
-                              />
-                            </div>
-                            <div>
-                              <p className="text-xs font-medium text-white truncate">
-                                {car.marca} {car.modelo}
-                              </p>
-                              <p className="text-[10px] text-white/50 font-mono mt-0.5">
-                                {specs.power} · {formatPrice(car.precoPorDia)}
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Carro pré-selecionado quando aberto pela Frota */}
-                {activeService.requiresCar && lockCar && selectedCar && carSpecs && (
-                  <div className="flex items-center gap-4 p-3.5 rounded-2xl bg-white/[0.025] border border-white/10">
-                    <img
-                      src={resolveStudioCarImage(selectedCar)}
-                      alt={selectedCar.modelo}
-                      className="w-24 h-14 object-contain shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-mono uppercase tracking-widest text-white/45">
-                        {selectedCar.marca} · {carSpecs.category}
-                      </p>
-                      <p className="text-sm font-medium text-white truncate">{selectedCar.modelo}</p>
-                      <p className="text-[11px] font-mono text-white/55">
-                        {carSpecs.power} · 0–100 km/h {carSpecs.accel} · Máx. {carSpecs.topSpeed}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. Data e Turno (TrackSlot real do banco) */}
-                <div>
-                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                    <label className="text-[11px] font-mono uppercase tracking-wider text-white/55 flex items-center gap-1.5">
-                      <CalendarClock size={13} className="text-[#FF1717]" />
-                      <span>Data &amp; Turno da Bateria (Vagas em Tempo Real)</span>
-                    </label>
-                    <span className="text-[10px] font-mono text-white/40">
-                      Seg fechado (Manutenção FIA) · Ter–Qui reduzido · Sex–Dom full grid
-                    </span>
-                  </div>
-
-                  {loadingSlots ? (
-                    <div className="flex items-center gap-2 text-xs text-white/50 py-4">
-                      <Loader2 size={14} className="animate-spin text-[#FF1717]" /> Buscando disponibilidade dos boxes...
-                    </div>
-                  ) : uniqueDates.length === 0 ? (
-                    <p className="text-xs text-white/50 py-2">
-                      Sem slots publicados para este circuito no momento.
+                    <h3 className="text-lg font-semibold text-white tracking-tight">
+                      Você Não Está Logado Ainda
+                    </h3>
+                    <p className="text-xs text-white/60 mt-1.5 max-w-xs leading-relaxed">
+                      Para emitir sua credencial de box e gravar a telemetria em seu nome, entre na sua conta ou cadastre-se no paddock.
                     </p>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap gap-2">
-                        {uniqueDates.map((d) => {
-                          const isDateActive = d === selectedDate;
-                          const parsed = new Date(`${d}T12:00:00`);
-                          const dowNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-                          const dowLabel = dowNames[parsed.getDay()] || '';
-                          const label = `${dowLabel} ${d.split('-').reverse().slice(0, 2).join('/')}`;
-                          const isWeekendPrime = parsed.getDay() === 5 || parsed.getDay() === 6 || parsed.getDay() === 0;
-                          return (
-                            <button
-                              key={d}
-                              type="button"
-                              onClick={() => {
-                                setSelectedDate(d);
-                                const firstForDate = slots.find(
-                                  (s) => s.data === d && s.vagasOcupadas < s.vagasTotais
-                                );
-                                if (firstForDate) setSelectedSlotId(firstForDate.id);
-                              }}
-                              className={`px-3.5 py-1.5 rounded-full text-xs font-mono transition-all cursor-pointer border flex items-center gap-1.5 ${
-                                isDateActive
-                                  ? 'bg-white text-[#08090C] border-white font-semibold'
-                                  : 'bg-white/[0.03] text-white/70 border-white/10 hover:border-white/30'
-                              }`}
-                            >
-                              <span>{label}</span>
-                              {isWeekendPrime && (
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    isDateActive ? 'bg-[#FF1717]' : 'bg-emerald-400/80'
-                                  }`}
-                                  title="Fim de semana: grade completa + noturno"
-                                />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
 
-                      {selectedDate && (() => {
-                        const dayNum = new Date(`${selectedDate}T12:00:00`).getDay();
-                        const isPrime = dayNum === 5 || dayNum === 6 || dayNum === 0;
-                        return (
-                          <p className={`text-[10px] font-mono ${isPrime ? 'text-emerald-400/90' : 'text-amber-300/85'}`}>
-                            {isPrime
-                              ? '● Fim de Semana / Alta Procura: 3 turnos ativos (inclui Sessão Noturna) e capacidade ampliada.'
-                              : '● Terça a Quinta / Operação Técnica: 2 turnos diurnos com capacidade reduzida.'}
-                          </p>
-                        );
-                      })()}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                        {slotsForSelectedDate.map((slot) => {
-                          const livres = slot.vagasTotais - slot.vagasOcupadas;
-                          const esgotado = livres <= 0;
-                          const isSelected = slot.id === selectedSlotId;
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              disabled={esgotado}
-                              onClick={() => setSelectedSlotId(slot.id)}
-                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                                isSelected
-                                  ? 'border-[#FF1717] bg-[#FF1717]/10'
-                                  : 'border-white/10 bg-white/[0.025] hover:border-white/25'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between text-xs font-medium text-white">
-                                <span>{TURNO_LABELS[slot.turno] || slot.turno}</span>
-                              </div>
-                              <div className="flex items-center justify-between mt-1.5 text-[10px] font-mono">
-                                <span className={esgotado ? 'text-rose-400' : 'text-emerald-400'}>
-                                  {esgotado ? 'Box lotado' : `${livres} boxes livres`}
-                                </span>
-                                <span className="text-white/55">
-                                  {Number(slot.taxaAdicionalTurno) > 0
-                                    ? `+${formatPrice(slot.taxaAdicionalTurno)}`
-                                    : 'Sem taxa extra'}
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 5. CNH (se pilotagem) & Pagamento ApexPay */}
-                {activeService.requiresCnh && (
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <label className="text-[11px] font-mono uppercase tracking-wider text-white/70 flex items-center gap-1.5">
-                        <KeyRound size={13} className="text-[#FF1717]" /> Habilitação do Piloto (Módulo 11 · Idade ≥ 21)
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setCnhInput('52798802310')}
-                        className="text-[10px] font-mono text-[#FF1717] hover:underline cursor-pointer"
-                      >
-                        Preencher CNH de teste (52798802310)
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <input
-                        type="text"
-                        placeholder="Número da CNH (11 dígitos)"
-                        value={cnhInput}
-                        onChange={(e) => setCnhInput(e.target.value)}
-                        className="bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white placeholder-white/35 outline-none"
-                      />
-                      <input
-                        type="date"
-                        value={dobInput}
-                        onChange={(e) => setDobInput(e.target.value)}
-                        className="bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Forma de Pagamento & Desconto Fidelidade ApexPay */}
-                <div className="p-4 rounded-2xl bg-[#08090C] border border-white/10 space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs font-medium text-white">
-                      <Wallet size={15} className="text-[#FF1717]" />
-                      <span>Checkout ApexPay</span>
-                      {perfil && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80">
-                          Tier {perfil.tierFidelidade} · Saldo: {formatPrice(perfil.saldoCarteira)}
-                        </span>
-                      )}
-                    </div>
-                    {perfil && (
+                    <div className="flex gap-3 w-full max-w-xs mt-6">
                       <button
                         type="button"
                         onClick={() => {
                           onClose();
-                          navigate('/apexpay');
+                          navigate('/login', { state: { from: window.location.pathname } });
                         }}
-                        className="text-[11px] text-white/60 hover:text-white underline cursor-pointer"
+                        className="flex-1 py-3 rounded-xl bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#FF1717]/25"
                       >
-                        Depositar na Carteira
+                        <LogIn size={14} />
+                        <span>Fazer Login</span>
                       </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setFormaPagamento('CARTEIRA_APEXPAY')}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        formaPagamento === 'CARTEIRA_APEXPAY'
-                          ? 'border-[#FF1717] bg-[#FF1717]/10'
-                          : 'border-white/10 bg-white/[0.02]'
-                      }`}
-                    >
-                      <p className="text-xs font-medium text-white">Pagar com Saldo ApexPay</p>
-                      <p className="text-[10px] text-white/55 mt-0.5">
-                        Débito imediato em carteira com aprovação instantânea (Green Flag).
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setFormaPagamento('FATURA_APEXPAY')}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        formaPagamento === 'FATURA_APEXPAY'
-                          ? 'border-[#FF1717] bg-[#FF1717]/10'
-                          : 'border-white/10 bg-white/[0.02]'
-                      }`}
-                    >
-                      <p className="text-xs font-medium text-white">Fatura Pós-Paga ApexPay</p>
-                      <p className="text-[10px] text-white/55 mt-0.5">
-                        Reserva sem saldo prévio; gera débito em aberto sujeito a juros se não quitado.
-                      </p>
-                    </button>
-                  </div>
-
-                  {/* Resumo Financeiro */}
-                  <div className="pt-3 border-t border-white/10 space-y-1 text-xs font-mono">
-                    <div className="flex justify-between text-white/55">
-                      <span>Modalidade + Taxa de Turno</span>
-                      <span>{formatPrice(pricing.subtotal)}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          navigate('/login?mode=register', { state: { from: window.location.pathname } });
+                        }}
+                        className="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium border border-white/15 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <UserPlus size={14} />
+                        <span>Cadastrar-se</span>
+                      </button>
                     </div>
-                    {pricing.discountPct > 0 && (
-                      <div className="flex justify-between text-emerald-400">
-                        <span>Desconto Fidelidade ({pricing.discountPct}%)</span>
-                        <span>-{formatPrice(pricing.discountVal)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-base font-sans font-semibold text-white pt-1">
-                      <span>Total da Sessão</span>
-                      <span className="text-[#FF1717] tabular-nums">{formatPrice(pricing.finalPrice)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {errorMsg && (
-                  <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-200 flex items-start gap-2.5">
-                    <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5" />
-                    <span>{errorMsg}</span>
                   </div>
                 )}
 
-                {!token || !user ? (
+                {/* FORMULÁRIO PRINCIPAL COM CAMPOS LIMPOS (ESTILO REFERÊNCIA) */}
+                <form onSubmit={handleConfirm} className="space-y-4">
+                  {/* Identificação do Piloto Logado (Discreta, sem card pesado) */}
+                  {isAuthenticated && user && (
+                    <div className="flex items-center justify-between py-2 border-b border-white/10 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        <span className="font-medium text-white">{perfil?.nome || user.email.split('@')[0]}</span>
+                        <span className="text-[10px] font-mono text-white/40">
+                          (CNH: {perfil?.cnhNumero || 'Cadastrada'})
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] text-emerald-400">
+                        Saldo: {formatPrice(perfil?.saldoCarteira || 0)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Campo 1: Autódromo Homologado */}
+                  {!lockCircuit && availableCircuits.length > 1 && (
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase tracking-[0.15em] text-white/50 mb-1.5">
+                        Autódromo Homologado
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedCircuitId}
+                          onChange={(e) => setSelectedCircuitId(e.target.value)}
+                          className="w-full h-11 px-3.5 rounded-xl bg-[#171A21] border border-white/10 text-xs font-medium text-white outline-none focus:border-[#FF1717] cursor-pointer appearance-none"
+                        >
+                          {availableCircuits.map((c) => (
+                            <option key={c.id} value={c.id} className="bg-[#0B0D12] text-white">
+                              {c.nome}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronRight
+                          size={14}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 rotate-90 text-white/40 pointer-events-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campo 2: Modalidade da Sessão */}
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase tracking-[0.15em] text-white/50 mb-1.5">
+                      Modalidade da Bateria
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={selectedService}
+                        onChange={(e) => setSelectedService(e.target.value as ServiceType)}
+                        className="w-full h-11 px-3.5 rounded-xl bg-[#171A21] border border-white/10 text-xs font-medium text-white outline-none focus:border-[#FF1717] cursor-pointer appearance-none"
+                      >
+                        {SERVICE_OPTIONS.map((srv) => {
+                          const estPrice = srv.fixedPrice
+                            ? srv.fixedPrice
+                            : selectedCar?.precoPorDia
+                            ? Number(selectedCar.precoPorDia) * srv.multiplier
+                            : 0;
+                          return (
+                            <option key={srv.id} value={srv.id} className="bg-[#0B0D12] text-white">
+                              {srv.title} · {srv.badge} ({estPrice > 0 ? formatPrice(estPrice) : 'Sob Consulta'})
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <ChevronRight
+                        size={14}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 rotate-90 text-white/40 pointer-events-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Campos 3 & 4 Lado a Lado: Data e Turno (Exatamente como Check-in e Check-out da Referência) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Data */}
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase tracking-[0.15em] text-white/50 mb-1.5">
+                        Data da Bateria
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedDate}
+                          onChange={(e) => {
+                            setSelectedDate(e.target.value);
+                            const firstForDate = slots.find(
+                              (s) => s.data === e.target.value && s.vagasOcupadas < s.vagasTotais
+                            );
+                            if (firstForDate) setSelectedSlotId(firstForDate.id);
+                          }}
+                          className="w-full h-11 pl-9 pr-8 rounded-xl bg-[#171A21] border border-white/10 text-xs font-medium text-white outline-none focus:border-[#FF1717] cursor-pointer appearance-none font-mono"
+                        >
+                          {uniqueDates.map((d) => (
+                            <option key={d} value={d} className="bg-[#0B0D12] text-white">
+                              {formatDateFriendly(d)}
+                            </option>
+                          ))}
+                        </select>
+                        {loadingSlots ? (
+                          <Loader2 size={14} className="animate-spin text-[#FF1717] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        ) : (
+                          <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                        )}
+                        <ChevronRight
+                          size={14}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-white/40 pointer-events-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Turno */}
+                    <div>
+                      <label className="block text-[10px] font-mono uppercase tracking-[0.15em] text-white/50 mb-1.5">
+                        Turno no Box
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedSlotId ?? ''}
+                          onChange={(e) => setSelectedSlotId(parseInt(e.target.value, 10))}
+                          className="w-full h-11 pl-9 pr-8 rounded-xl bg-[#171A21] border border-white/10 text-xs font-medium text-white outline-none focus:border-[#FF1717] cursor-pointer appearance-none"
+                        >
+                          {slotsForSelectedDate.map((slot) => {
+                            const livres = slot.vagasTotais - slot.vagasOcupadas;
+                            const esgotado = livres <= 0;
+                            return (
+                              <option
+                                key={slot.id}
+                                value={slot.id}
+                                disabled={esgotado}
+                                className="bg-[#0B0D12] text-white"
+                              >
+                                {TURNO_LABELS[slot.turno] || slot.turno} ({livres} vagas)
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                        <ChevronRight
+                          size={14}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-white/40 pointer-events-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Campo 5: Forma de Pagamento */}
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase tracking-[0.15em] text-white/50 mb-1.5">
+                      Forma de Pagamento
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormaPagamento('CARTEIRA_APEXPAY')}
+                        className={`h-11 px-3.5 rounded-xl border text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                          formaPagamento === 'CARTEIRA_APEXPAY'
+                            ? 'bg-[#FF1717]/15 border-[#FF1717] text-white ring-1 ring-[#FF1717]/40'
+                            : 'bg-[#171A21] border-white/10 text-white/60 hover:border-white/20'
+                        }`}
+                      >
+                        <span>Saldo ApexPay</span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormaPagamento('FATURA_APEXPAY')}
+                        className={`h-11 px-3.5 rounded-xl border text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                          formaPagamento === 'FATURA_APEXPAY'
+                            ? 'bg-[#FF1717]/15 border-[#FF1717] text-white ring-1 ring-[#FF1717]/40'
+                            : 'bg-[#171A21] border-white/10 text-white/60 hover:border-white/20'
+                        }`}
+                      >
+                        <span>Fatura Pós-Paga</span>
+                        <CreditCard size={13} className="text-white/40" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mensagem de Erro (se houver) */}
+                  {errorMsg && (
+                    <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs text-rose-200 flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                      <span>{errorMsg}</span>
+                    </div>
+                  )}
+
+                  {/* Botão de Confirmação (Estilo 'Complete your booking' da referência) */}
+                  <div className="pt-3">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || Boolean(perfil?.inadimplente)}
+                      className="w-full h-12 rounded-xl bg-[#FF1717] hover:bg-[#e01414] disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-semibold uppercase tracking-wider transition-all shadow-lg shadow-[#FF1717]/25 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          <span>Processando Agendamento...</span>
+                        </>
+                      ) : (
+                        <span>
+                          Confirmar Agendamento · {formatPrice(pricing.finalPrice)}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+
+          {/* ========================================================
+              COLUNA DIREITA: VITRINE DE ESTÚDIO FULL-BLEED (CARROSSEL)
+             ======================================================== */}
+          <div className="w-full lg:w-[52%] relative bg-gradient-to-br from-[#121620] via-[#080A0E] to-[#040507] p-6 sm:p-9 flex flex-col justify-between overflow-hidden">
+            {/* Glow cinematográfico de pista */}
+            <div
+              className="absolute inset-0 pointer-events-none opacity-30"
+              style={{
+                background: 'radial-gradient(circle at 60% 55%, rgba(255, 23, 23, 0.25) 0%, transparent 65%)',
+              }}
+            />
+
+            {/* Topo da Vitrine: Posição do Carrossel e Categoria */}
+            <div className="relative z-10 flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#FF1717] flex items-center gap-1.5">
+                <Zap size={12} />
+                <span>Supercarros de Alta Velocidade</span>
+              </span>
+
+              {displayCars.length > 1 && (
+                <span className="text-[11px] font-mono text-white/50">
+                  {carCarouselIndex + 1} / {displayCars.length}
+                </span>
+              )}
+            </div>
+
+            {/* Imagem do Supercarro com Setas Minimalistas */}
+            <div className="relative z-10 flex-1 flex flex-col items-center justify-center my-auto py-4">
+              <div className="relative w-full aspect-[16/10] max-h-[340px] flex items-center justify-center">
+                {/* Seta Esquerda */}
+                {displayCars.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      navigate('/login', { state: { from: window.location.pathname } });
-                    }}
-                    className="w-full bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-semibold uppercase tracking-wider py-4 rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={handlePrevCar}
+                    aria-label="Carro anterior"
+                    className="absolute left-2 z-20 w-10 h-10 rounded-full bg-black/60 hover:bg-[#FF1717] text-white/70 hover:text-white border border-white/15 flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
                   >
-                    <LogIn size={16} />
-                    <span>Entrar ou Cadastrar-se para Reservar Sessão</span>
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || Boolean(perfil?.inadimplente)}
-                    className="w-full bg-[#FF1717] hover:bg-[#e01414] disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-semibold uppercase tracking-wider py-4 rounded-full transition-all shadow-lg shadow-[#FF1717]/25 flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        <span>Processando Reserva no Box...</span>
-                      </>
-                    ) : (
-                      <span>Confirmar Agendamento de Sessão</span>
-                    )}
+                    <ChevronLeft size={18} />
                   </button>
                 )}
-              </form>
+
+                {/* Carro em foco */}
+                {viewedCar && (
+                  <AnimatePresence mode="wait">
+                    <motion.img
+                      key={viewedCar.id}
+                      src={resolveStudioCarImage(viewedCar)}
+                      alt={`${viewedCar.marca} ${viewedCar.modelo}`}
+                      initial={{ opacity: 0, x: 20, scale: 0.96 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: -20, scale: 0.96 }}
+                      transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                      className="w-full h-full object-contain filter drop-shadow-[0_24px_40px_rgba(0,0,0,0.95)]"
+                    />
+                  </AnimatePresence>
+                )}
+
+                {/* Seta Direita */}
+                {displayCars.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleNextCar}
+                    aria-label="Próximo carro"
+                    className="absolute right-2 z-20 w-10 h-10 rounded-full bg-black/60 hover:bg-[#FF1717] text-white/70 hover:text-white border border-white/15 flex items-center justify-center backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                )}
+              </div>
+
+              {/* Botão de Selecionar Carro */}
+              {viewedCar && (
+                <div className="mt-3">
+                  {isViewedCarSelected ? (
+                    <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-400 text-xs font-semibold">
+                      <Check size={14} />
+                      <span>Carro Selecionado</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectViewedCar(viewedCar)}
+                      className="inline-flex items-center gap-1.5 px-5 py-1.5 rounded-full bg-white hover:bg-[#FF1717] text-[#08090C] hover:text-white text-xs font-semibold transition-all shadow-md cursor-pointer hover:scale-105"
+                    >
+                      <Check size={14} />
+                      <span>Escolher este Supercarro</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé da Vitrine: Título, Descrição Poética & Telemetria HUD */}
+            {viewedCar && viewedSpecs && (
+              <div className="relative z-10 pt-4 border-t border-white/10 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                      {viewedCar.marca} {viewedCar.modelo}
+                    </h3>
+                    <p className="text-xs text-white/50 mt-0.5">
+                      Engenharia de pista pura · {viewedSpecs.power} · 0–100 km/h em {viewedSpecs.accel}
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-white shrink-0">
+                    {formatPrice(viewedCar.precoPorDia)} / dia
+                  </span>
+                </div>
+
+                {/* Pontos de Navegação do Carrossel */}
+                {displayCars.length > 1 && (
+                  <div className="flex justify-center items-center gap-1.5 pt-2">
+                    {displayCars.map((c, i) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setCarCarouselIndex(i)}
+                        aria-label={`Ver ${c.modelo}`}
+                        className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                          i === carCarouselIndex ? 'w-6 bg-[#FF1717]' : 'w-1.5 bg-white/20 hover:bg-white/40'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </motion.div>
@@ -931,3 +910,5 @@ export function SessionBookingModal({
     </AnimatePresence>
   );
 }
+
+export default SessionBookingModal;

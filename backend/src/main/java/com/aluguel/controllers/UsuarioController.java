@@ -32,6 +32,50 @@ public class UsuarioController {
         }
     }
 
+    @Post("/recuperar-senha-whatsapp/solicitar")
+    @Secured(SecurityRule.IS_ANONYMOUS)
+    public HttpResponse<?> solicitarRecuperacaoWhatsApp(@Body Map<String, String> payload, io.micronaut.http.HttpRequest<?> request) {
+        try {
+            String telefone = payload != null ? payload.get("telefone") : null;
+            String clientIp = extrairIpCliente(request);
+            Map<String, Object> resp = facade.solicitarRecuperacaoSenhaWhatsApp(telefone, clientIp);
+            return HttpResponse.ok(resp);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", "Falha ao solicitar código via WhatsApp."));
+        }
+    }
+
+    private String extrairIpCliente(io.micronaut.http.HttpRequest<?> request) {
+        if (request == null) return "127.0.0.1";
+        String forwarded = request.getHeaders().get("X-Forwarded-For");
+        if (forwarded != null && !forwarded.trim().isEmpty()) {
+            return forwarded.split(",")[0].trim();
+        }
+        try {
+            return request.getRemoteAddress().getAddress().getHostAddress();
+        } catch (Exception ignored) {
+            return "127.0.0.1";
+        }
+    }
+
+    @Post("/recuperar-senha-whatsapp/redefinir")
+    @Secured(SecurityRule.IS_ANONYMOUS)
+    public HttpResponse<?> redefinirSenhaWhatsApp(@Body Map<String, String> payload) {
+        try {
+            String telefone = payload != null ? payload.get("telefone") : null;
+            String codigo = payload != null ? payload.get("codigo") : null;
+            String novaSenha = payload != null ? payload.get("novaSenha") : null;
+            Map<String, Object> resp = facade.redefinirSenhaWhatsApp(telefone, codigo, novaSenha);
+            return HttpResponse.ok(resp);
+        } catch (IllegalArgumentException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", "Falha ao redefinir senha via WhatsApp."));
+        }
+    }
+
     @Get("/me")
     @Secured(SecurityRule.IS_AUTHENTICATED)
     public HttpResponse<?> meuPerfil(Principal principal) {
@@ -39,6 +83,34 @@ public class UsuarioController {
             return HttpResponse.ok(facade.buscarPerfil(principal.getName()));
         } catch (IllegalArgumentException e) {
             return HttpResponse.notFound(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @Put("/me")
+    @Secured(SecurityRule.IS_AUTHENTICATED)
+    public HttpResponse<?> atualizarPerfil(@Body Map<String, Object> payload, Principal principal) {
+        try {
+            return HttpResponse.ok(facade.atualizarPerfil(principal.getName(), payload));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", "Falha ao atualizar dados do perfil."));
+        }
+    }
+
+    @Put("/me/senha")
+    @Secured(SecurityRule.IS_AUTHENTICATED)
+    public HttpResponse<?> alterarSenha(@Body Map<String, String> payload, Principal principal) {
+        try {
+            String senhaAtual = payload != null ? payload.get("senhaAtual") : null;
+            String novaSenha = payload != null ? payload.get("novaSenha") : null;
+            String codigo = payload != null ? payload.get("codigoWhatsApp") : null;
+            Map<String, Object> resp = facade.alterarSenhaAutenticado(principal.getName(), senhaAtual, novaSenha, codigo);
+            return HttpResponse.ok(resp);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", "Falha ao alterar senha."));
         }
     }
 

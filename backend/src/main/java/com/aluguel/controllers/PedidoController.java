@@ -27,8 +27,10 @@ public class PedidoController {
     public HttpResponse<?> criar(@Body Pedido pedido, Principal principal) {
         try {
             Pedido salvo = facade.criarPedido(pedido, principal.getName());
+            queueEngine.registrarSucessoSincrono(salvo);
             return HttpResponse.created(salvo);
         } catch (IllegalArgumentException | IllegalStateException e) {
+            queueEngine.registrarFalhaSincrona(pedido, principal.getName(), e.getMessage());
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         }
     }
@@ -51,7 +53,7 @@ public class PedidoController {
     }
 
     @Put("/{id}/avaliar")
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA", "ROLE_BANCO"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> avaliar(@PathVariable Long id, @QueryValue String status, Principal principal) {
         try {
             Pedido avaliado = facade.avaliarPedido(id, principal.getName(), status);
@@ -62,7 +64,7 @@ public class PedidoController {
     }
 
     @Get
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA", "ROLE_BANCO"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> listarPedidos(Principal principal) {
         return HttpResponse.ok(facade.listarPedidosParaAgente(principal.getName()));
     }
@@ -78,7 +80,7 @@ public class PedidoController {
     }
 
     @Put("/{id}/modificar")
-    @Secured({"ROLE_ADMIN", "ROLE_EMPRESA"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> modificar(@PathVariable Long id, @Body Pedido pedido, Principal principal) {
         try {
             return HttpResponse.ok(facade.modificarPedidoAgente(id, principal.getName(), pedido));
@@ -111,5 +113,47 @@ public class PedidoController {
     @Secured("ROLE_CLIENTE")
     public HttpResponse<?> listarMeusPedidos(Principal principal) {
         return HttpResponse.ok(facade.listarPedidosDoCliente(principal.getName()));
+    }
+
+    @Get("/fila/metricas")
+    @Secured(SecurityRule.IS_AUTHENTICATED)
+    public HttpResponse<?> obterMetricasFila() {
+        return HttpResponse.ok(queueEngine.getMetricas());
+    }
+
+    @Get("/{id}/qrcode")
+    @Secured(SecurityRule.IS_AUTHENTICATED)
+    public HttpResponse<?> obterQrCodeSessao(@PathVariable Long id, Principal principal) {
+        try {
+            return HttpResponse.ok(facade.obterQrCodeSessao(id, principal.getName()));
+        } catch (IllegalStateException e) {
+            return HttpResponse.status(io.micronaut.http.HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return HttpResponse.notFound(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @Post("/validar-qrcode")
+    @Secured(SecurityRule.IS_AUTHENTICATED)
+    public HttpResponse<?> validarQrCode(@Body Map<String, Object> body, Principal principal) {
+        try {
+            String qrData = body != null && body.get("qrData") != null ? body.get("qrData").toString() : "";
+            boolean registrarCheckIn = body != null && Boolean.TRUE.equals(body.get("registrarCheckIn"));
+            return HttpResponse.ok(facade.validarQrCodeSessao(qrData, registrarCheckIn, principal.getName()));
+        } catch (IllegalStateException e) {
+            return HttpResponse.status(io.micronaut.http.HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @Post("/qrcode/task")
+    @Secured("ROLE_ADMIN")
+    public HttpResponse<?> executarTaskQrCodes(Principal principal) {
+        try {
+            return HttpResponse.ok(facade.executarTaskQrCodesAdmin(principal.getName()));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        }
     }
 }

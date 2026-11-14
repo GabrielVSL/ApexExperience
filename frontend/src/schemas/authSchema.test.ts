@@ -40,6 +40,7 @@ describe('authSchema - registerSchema', () => {
       role: 'CLIENTE',
       nome: 'Carlos Silva',
       email: 'carlos@gmail.com',
+      telefone: '(11) 98765-4321',
       password: 'senhaForte123',
       confirmPassword: 'senhaForte123',
       endereco: 'Rua Principal, 100',
@@ -50,11 +51,28 @@ describe('authSchema - registerSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('deve reprovar registro de cliente sem WhatsApp/telefone válido', () => {
+    const invalidPhone = {
+      role: 'CLIENTE',
+      nome: 'Carlos Silva',
+      email: 'carlos@gmail.com',
+      telefone: '1234',
+      password: 'senhaForte123',
+      confirmPassword: 'senhaForte123',
+      endereco: 'Rua Principal, 100',
+      cpf: '123.456.789-00',
+      rg: 'MG-12.345.678',
+    };
+    const result = registerSchema.safeParse(invalidPhone);
+    expect(result.success).toBe(false);
+  });
+
   it('deve reprovar registro quando confirmação de senha não coincide', () => {
     const invalidData = {
       role: 'CLIENTE',
       nome: 'Carlos Silva',
       email: 'carlos@gmail.com',
+      telefone: '(11) 98765-4321',
       password: 'senhaForte123',
       confirmPassword: 'senhaDiferente456',
       endereco: 'Rua Principal, 100',
@@ -74,6 +92,7 @@ describe('authSchema - registerSchema', () => {
       role: 'CLIENTE',
       nome: 'Carlos Silva',
       email: 'carlos@gmail.com',
+      telefone: '(11) 98765-4321',
       password: 'senhaForte123',
       confirmPassword: 'senhaForte123',
       endereco: 'Rua Principal, 100',
@@ -89,6 +108,7 @@ describe('authSchema - registerSchema', () => {
       role: 'EMPRESA',
       nome: 'Locadora Premium Ltda',
       email: 'contato@locadorapremium.com',
+      telefone: '(11) 98765-4321',
       password: 'senhaForte123',
       confirmPassword: 'senhaForte123',
       endereco: 'Av. Paulista, 1000',
@@ -104,6 +124,7 @@ describe('authSchema - registerSchema', () => {
       role: 'CLIENTE',
       nome: 'Carlos Silva',
       email: 'carlos@gmail.com',
+      telefone: '(11) 98765-4321',
       password: 'senhaForte123',
       confirmPassword: 'senhaForte123',
       endereco: 'Rua Principal, 100',

@@ -181,7 +181,7 @@ export default function PistasPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isStaff = Boolean(user && user.role !== 'CLIENTE');
-  const staffTarget = user?.role === 'BANCO' ? '/analises' : '/frota';
+  const staffTarget = '/frota';
 
   const activeWeather = weatherData[selectedCircuit.id] || null;
 
@@ -381,7 +381,7 @@ export default function PistasPage() {
                 className="flex items-center gap-1.5 bg-white/10 hover:bg-[#FF1717] border border-white/15 hover:border-[#FF1717] text-white text-[11px] font-medium tracking-wider uppercase px-3.5 py-1.5 rounded-xl transition-all duration-200 shadow-md active:scale-[0.98]"
               >
                 <CalendarCheck size={13} className="text-white" />
-                <span>{user?.role === 'BANCO' ? 'Painel de Auditoria' : 'Gerenciar nos Boxes'}</span>
+                <span>Gerenciar nos Boxes</span>
               </Link>
             ) : (
               <button

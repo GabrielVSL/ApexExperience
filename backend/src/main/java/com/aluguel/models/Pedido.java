@@ -44,7 +44,7 @@ public class Pedido {
     private BigDecimal valorTotal;
 
     @Column(nullable = false)
-    private String status = "PENDENTE_EMPRESA";
+    private String status = "AGUARDANDO_APROVACAO";
 
     // --- 🏎️ CAMPOS DO APEX TRACK EXPERIENCE & APEXPAY ---
     @ManyToOne
@@ -66,14 +66,27 @@ public class Pedido {
     @Column(length = 30)
     private String formaPagamento = "CARTEIRA_APEXPAY"; // CARTEIRA_APEXPAY, FATURA_APEXPAY
 
-    @Column(length = 30)
-    private String pagamentoStatus = "PENDENTE"; // PENDENTE, PAGO_CARTEIRA, DEBITO_ABERTO
+    @Column(length = 40)
+    private String pagamentoStatus = "PENDENTE"; // PENDENTE, PAGO_CARTEIRA, FATURA_AGUARDANDO_APROVACAO, FATURA_EM_ABERTO, ESTORNADO, CANCELADO
 
     @Column
     private BigDecimal valorSinistro = BigDecimal.ZERO;
 
     @Column(length = 300)
     private String motivoSinistro;
+
+    // --- 🎫 CREDENCIAL DIGITAL FIA PADDOCK PASS (QR CODE ASSINADO) ---
+    @Column(columnDefinition = "TEXT")
+    private String qrCodePayload;
+
+    @Column(length = 128)
+    private String qrCodeAssinatura;
+
+    @Column
+    private LocalDateTime qrCodeGeradoEm;
+
+    @Column
+    private LocalDateTime checkInRealizadoEm;
 
     // Campos transientes recebidos no checkout para atualização imediata do perfil
     @Transient
@@ -134,4 +147,13 @@ public class Pedido {
     public void setDataNascimentoInformada(String dataNascimentoInformada) { this.dataNascimentoInformada = dataNascimentoInformada; }
     public Integer getVersion() { return version; }
     public void setVersion(Integer version) { this.version = version; }
+
+    public String getQrCodePayload() { return qrCodePayload; }
+    public void setQrCodePayload(String qrCodePayload) { this.qrCodePayload = qrCodePayload; }
+    public String getQrCodeAssinatura() { return qrCodeAssinatura; }
+    public void setQrCodeAssinatura(String qrCodeAssinatura) { this.qrCodeAssinatura = qrCodeAssinatura; }
+    public LocalDateTime getQrCodeGeradoEm() { return qrCodeGeradoEm; }
+    public void setQrCodeGeradoEm(LocalDateTime qrCodeGeradoEm) { this.qrCodeGeradoEm = qrCodeGeradoEm; }
+    public LocalDateTime getCheckInRealizadoEm() { return checkInRealizadoEm; }
+    public void setCheckInRealizadoEm(LocalDateTime checkInRealizadoEm) { this.checkInRealizadoEm = checkInRealizadoEm; }
 }

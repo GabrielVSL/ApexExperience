@@ -25,20 +25,16 @@ public class ApexPayController {
     }
 
     /**
-     * Realiza um depósito na carteira ApexPay.
-     * Atualiza saldo em tempo real e recalcula o Tier de Fidelidade (Standard, Silver, Gold, Apex Black).
+     * Realiza um depósito (recarga simulada) na carteira ApexPay.
      */
     @Post("/deposito")
     public HttpResponse<?> depositar(@Body Map<String, Object> payload, Authentication authentication) {
         try {
             String email = authentication != null ? authentication.getName() : null;
-            boolean isAdminOrBanco = authentication != null && (
-                    authentication.getRoles().contains("ROLE_ADMIN") ||
-                    authentication.getRoles().contains("ROLE_BANCO")
-            );
+            boolean isAdmin = authentication != null && authentication.getRoles().contains("ROLE_ADMIN");
 
-            if (payload.get("email") != null && isAdminOrBanco) {
-                // Admin ou Banco podem creditar na conta de outro usuário
+            if (payload.get("email") != null && isAdmin) {
+                // Admin pode creditar na conta de outro usuário
                 email = (String) payload.get("email");
             }
             if (email == null) {
@@ -92,10 +88,10 @@ public class ApexPayController {
 
     /**
      * Aplicação de juros sobre saldo devedor (Inadimplência).
-     * Disponível para Agentes Financeiros, Admin ou simulação de rotina de fechamento.
+     * Disponível apenas para o Administrador Apex ou simulação de rotina de fechamento.
      */
     @Post("/aplicar-juros")
-    @Secured({"ROLE_ADMIN", "ROLE_BANCO"})
+    @Secured("ROLE_ADMIN")
     public HttpResponse<?> aplicarJuros(@Body Map<String, String> payload) {
         try {
             String email = payload.get("email");
@@ -117,7 +113,7 @@ public class ApexPayController {
 
     /**
      * Endpoint protegido para consulta de dados de carteira.
-     * Permitido apenas para o próprio usuário ou Agentes de Risco / Administradores.
+     * Permitido apenas para o próprio usuário ou Administrador Apex.
      */
     @Get("/consulta/{email}")
     @Secured(SecurityRule.IS_AUTHENTICATED)
@@ -126,8 +122,8 @@ public class ApexPayController {
             return HttpResponse.unauthorized();
         }
         boolean isSelf = authentication.getName().equalsIgnoreCase(email);
-        boolean isAdminOrBanco = authentication.getRoles().contains("ROLE_ADMIN") || authentication.getRoles().contains("ROLE_BANCO");
-        if (!isSelf && !isAdminOrBanco) {
+        boolean isAdmin = authentication.getRoles().contains("ROLE_ADMIN");
+        if (!isSelf && !isAdmin) {
             return HttpResponse.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("message", "Acesso não autorizado aos dados da carteira."));
         }

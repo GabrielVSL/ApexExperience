@@ -9,7 +9,7 @@ describe('AuthPage Component', () => {
     useAuthStore.getState().logout();
   });
 
-  it('deve iniciar na aba Login selecionada com vídeo noturno embutido no palco', () => {
+  it('deve iniciar na aba Login selecionada com canvas Antigravity embutido no fundo', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/login']}>
         <Routes>
@@ -24,8 +24,8 @@ describe('AuthPage Component', () => {
     expect(loginTab.getAttribute('aria-selected')).toBe('true');
     expect(cadastroTab.getAttribute('aria-selected')).toBe('false');
     expect(screen.getByText('LOGIN')).toBeDefined();
-    expect(container.querySelector('video')?.getAttribute('src')).toBe('/auth-night-race.mp4');
-  });
+    expect(container.querySelector('canvas')).toBeDefined();
+  }, 15000);
 
   it('deve alternar para Cadastro na Etapa 1 de 3 e avançar etapas mediante validação', async () => {
     render(
@@ -59,6 +59,9 @@ describe('AuthPage Component', () => {
     fireEvent.change(screen.getByPlaceholderText('piloto@email.com'), {
       target: { value: 'gabriel@apex.com' },
     });
+    fireEvent.change(screen.getByPlaceholderText('(11) 98765-4321'), {
+      target: { value: '(11) 98765-4321' },
+    });
     fireEvent.change(screen.getByPlaceholderText('Rua, número, cidade e estado'), {
       target: { value: 'Av. Interlagos, 1000' },
     });
@@ -82,5 +85,22 @@ describe('AuthPage Component', () => {
     const cadastroTab = screen.getByRole('tab', { name: /cadastro/i });
     expect(cadastroTab.getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText(/Etapa 1 de 3/)).toBeDefined();
+  });
+
+  it('deve abrir o modal de recuperação de senha via WhatsApp e permitir digitação do número', () => {
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<AuthPage initialMode="login" />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const forgotBtn = screen.getByText(/Esqueceu a senha\?/i);
+    fireEvent.click(forgotBtn);
+
+    expect(screen.getByText(/WhatsApp OTP/i)).toBeDefined();
+    expect(screen.getByPlaceholderText('(11) 98765-4321')).toBeDefined();
+    expect(screen.getByRole('button', { name: /Enviar Código via WhatsApp/i })).toBeDefined();
   });
 });

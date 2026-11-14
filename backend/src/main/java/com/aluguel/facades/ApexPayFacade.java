@@ -18,11 +18,20 @@ public class ApexPayFacade {
 
     private final UsuarioRepository usuarioRepository;
     private final TransacaoApexPayRepository transacaoRepository;
+    private final com.aluguel.services.WhatsAppService whatsAppService;
+
+    @jakarta.inject.Inject
+    public ApexPayFacade(UsuarioRepository usuarioRepository,
+                         TransacaoApexPayRepository transacaoRepository,
+                         @io.micronaut.core.annotation.Nullable com.aluguel.services.WhatsAppService whatsAppService) {
+        this.usuarioRepository = usuarioRepository;
+        this.transacaoRepository = transacaoRepository;
+        this.whatsAppService = whatsAppService;
+    }
 
     public ApexPayFacade(UsuarioRepository usuarioRepository,
                          TransacaoApexPayRepository transacaoRepository) {
-        this.usuarioRepository = usuarioRepository;
-        this.transacaoRepository = transacaoRepository;
+        this(usuarioRepository, transacaoRepository, null);
     }
 
     @Transactional
@@ -43,7 +52,14 @@ public class ApexPayFacade {
                 (descricao != null && !descricao.isBlank()) ? descricao : "Depósito em Conta ApexPay",
                 null
         );
-        return transacaoRepository.save(transacao);
+        TransacaoApexPay salva = transacaoRepository.save(transacao);
+
+        // Notificação de crédito na carteira via WhatsApp
+        if (whatsAppService != null && usuario.getTelefone() != null && !usuario.getTelefone().isBlank()) {
+            whatsAppService.enviarConfirmacaoDepositoAsync(usuario.getTelefone(), usuario.getNome(), valor, usuario.getSaldoCarteira());
+        }
+
+        return salva;
     }
 
     @Transactional
@@ -60,10 +76,8 @@ public class ApexPayFacade {
             throw new IllegalStateException("Conta ApexPay inadimplente (" + usuario.getSaldoCarteira() + " BRL). Regularize o saldo pendente antes de realizar novos agendamentos.");
         }
 
-        // Aplica o desconto de Fidelidade baseado no total depositado acumulado
-        BigDecimal fatorDesconto = usuario.getFatorDesconto();
-        BigDecimal desconto = valorOriginal.multiply(fatorDesconto).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal valorFinal = valorOriginal.subtract(desconto);
+        // Gateway ApexPay cobra o valor integral da sessão (sem tiers artificiais de desconto)
+        BigDecimal valorFinal = valorOriginal.setScale(2, RoundingMode.HALF_UP);
 
         // Debita da carteira
         usuario.debitarSaldo(valorFinal);
@@ -71,7 +85,7 @@ public class ApexPayFacade {
 
         String desc = (descricao != null && !descricao.isBlank())
                 ? descricao
-                : String.format("Débito Reserva [%s] com Desconto Fidelidade (%s%%)", trackingCode, fatorDesconto.multiply(new BigDecimal("100")).intValue());
+                : String.format("Pagamento de Sessão [%s] via Saldo ApexPay", trackingCode);
 
         TransacaoApexPay transacao = new TransacaoApexPay(
                 usuario,
@@ -198,7 +212,7 @@ public class ApexPayFacade {
         resumo.put("statusFinanceiro", usuario.getStatusFinanceiro() != null ? usuario.getStatusFinanceiro() : "REGULAR");
         resumo.put("inadimplente", usuario.isInadimplente());
         resumo.put("tierFidelidade", usuario.getTierFidelidade());
-        resumo.put("porcentagemDesconto", usuario.getFatorDesconto().multiply(new BigDecimal("100")).intValue());
+        resumo.put("porcentagemDesconto", 0);
         return resumo;
     }
 

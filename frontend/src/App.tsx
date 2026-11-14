@@ -1,19 +1,17 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from '@/components/layout/Layout.tsx';
 import HomeLayout from '@/components/layout/HomeLayout.tsx';
 import PageTransition from '@/components/PageTransition.tsx';
 import PedidosPage from '@/features/booking/pages/PedidosPage';
 import MeusAlugueisPage from '@/features/booking/pages/MeusAlugueisPage';
-import AnalisesPage from '@/features/bank/pages/AnalisesPage';
 import ApexPayPage from '@/features/bank/pages/ApexPayPage';
-import AdminDashboardPage from '@/features/bank/pages/AdminDashboardPage';
+import AdminDashboardPage from '@/features/admin/pages/AdminDashboardPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import ToastContainer from '@/components/ui/ToastContainer';
 
 import AuthPage from '@/features/auth/pages/AuthPage';
 import CarsPage from '@/features/cars/pages/CarsPage.tsx';
 import CarDetailPage from '@/features/cars/pages/CarDetailPage.tsx';
-import FrotaPage from '@/features/cars/pages/FrotaPage.tsx';
 import PistasPage from '@/features/circuits/pages/PistasPage';
 
 function NotFound() {
@@ -46,21 +44,24 @@ export default function App() {
           <Route path="/cars" element={<PageTransition><CarsPage /></PageTransition>} />
           <Route path="/cars/:id" element={<PageTransition><CarDetailPage /></PageTransition>} />
 
-          {/* Rota exclusiva para Locadoras/Empresas */}
+          {/* Frota fixa imutável (redireciona ao showroom oficial) */}
+          <Route path="/frota" element={<Navigate to="/cars" replace />} />
+
+          {/* Gestão de Pilotos & Usuários (Race Control) */}
           <Route
-            path="/frota"
+            path="/admin/usuarios"
             element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'EMPRESA']}>
-                <PageTransition><FrotaPage /></PageTransition>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <PageTransition><AdminDashboardPage /></PageTransition>
               </ProtectedRoute>
             }
           />
 
-          {/* Gestão de Pedidos para Empresas e Bancos */}
+          {/* Gestão de Pedidos & Homologação Race Control */}
           <Route
             path="/pedidos"
             element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'EMPRESA', 'BANCO']}>
+              <ProtectedRoute allowedRoles={['ADMIN']}>
                 <PageTransition><PedidosPage /></PageTransition>
               </ProtectedRoute>
             }
@@ -76,15 +77,8 @@ export default function App() {
             }
           />
 
-          {/* Área de Análise e Auditoria de Crédito do Banco */}
-          <Route
-            path="/analises"
-            element={
-              <ProtectedRoute allowedRoles={['BANCO', 'ADMIN']}>
-                <PageTransition><AnalisesPage /></PageTransition>
-              </ProtectedRoute>
-            }
-          />
+          {/* Rota legada redirecionada ao painel administrativo único */}
+          <Route path="/analises" element={<Navigate to="/admin" replace />} />
 
           {/* Carteira ApexPay do Piloto */}
           <Route
