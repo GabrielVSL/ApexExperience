@@ -1,59 +1,82 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 import HeroVideo from '@/features/booking/HeroVideo';
-import SearchSection from '@/features/booking/SearchSection';
-import { TrustMarquee } from '@/features/home/TrustMarquee';
-import { BentoAdvantages } from '@/features/home/BentoAdvantages';
+import { EditorialRideBanner } from '@/features/home/EditorialRideBanner';
+import { BrandShowcaseStrip } from '@/features/home/BrandShowcaseStrip';
+import { FleetCompareSection } from '@/features/home/FleetCompareSection';
+import { ComoFuncionaSection } from '@/features/home/ComoFuncionaSection';
+import { ApexPaySection } from '@/features/home/ApexPaySection';
+import { BookingModal, Automovel } from '@/features/cars/components/BookingModal';
+import { api } from '@/services/api';
+import { useAuthStore } from '@/store/useAuthStore';
 
 export default function HomeLayout() {
-  const defaultVideoSrc = 'https://res.cloudinary.com/db4qol7fr/video/upload/v1775671109/14155424_3840_2160_30fps_nltdls.mp4';
-  const defaultPosterSrc = 'https://res.cloudinary.com/db4qol7fr/video/upload/v1775671109/14155424_3840_2160_30fps_nltdls.jpg';
+  const { user } = useAuthStore();
+  const showApexPay = !user || user.role === 'CLIENTE';
+  const [cars, setCars] = useState<Automovel[]>([]);
+  const [isLoadingCars, setIsLoadingCars] = useState(true);
+  const [focusedBrand, setFocusedBrand] = useState<{ brand: string; seq: number } | null>(null);
+  const [selectedCar, setSelectedCar] = useState<Automovel | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    api
+      .get('/api/automoveis')
+      .then((res) => setCars(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setCars([]))
+      .finally(() => setIsLoadingCars(false));
+  }, []);
+
+  const handleOpenBooking = (car: Automovel) => {
+    setSelectedCar(car);
+    setIsModalOpen(true);
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F5F5F7]">
+    <div className="min-h-screen flex flex-col bg-[#08090C] text-white selection:bg-[#FF1717] selection:text-white">
       <Header transparent={true} />
-      
+
       <main className="flex-1">
-        
-        {/* ATO 1: O GANCHO (Hero + Busca Sobreposta) */}
-        <section className="relative">
-          <HeroVideo videoSrc={defaultVideoSrc} posterSrc={defaultPosterSrc} />
-          <div className="relative z-30 pt-12">
-            <SearchSection />
-          </div>
-        </section>
-        
-        {/* ATO 2: A AUTORIDADE (Marcas que confiam) */}
-        <TrustMarquee />
-        
-        {/* ATO 3: A QUEBRA DE OBJEÇÕES (Bento Grid Premium) */}
-        <BentoAdvantages />
+        {/* 1. Hero Cinematográfica */}
+        <HeroVideo videoSrc="/hero.mp4" posterSrc="/hero-poster.jpg" />
 
-        {/* ATO 4: O CLÍMAX (CTA Final Irresistível) */}
-        <section className="py-32 px-6 bg-white overflow-hidden">
-          <div className="max-w-4xl mx-auto text-center relative">
-            {/* Brilho de fundo sutil para dar profundidade */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-100/50 blur-[120px] rounded-full pointer-events-none" />
-            
-            <h2 className="text-5xl md:text-7xl font-black text-slate-900 mb-8 tracking-tighter leading-tight relative z-10">
-              A estrada está chamando. <br />
-              <span className="text-blue-600">Responda.</span>
-            </h2>
-            <p className="text-slate-500 text-xl md:text-2xl font-medium mb-12 max-w-2xl mx-auto leading-relaxed relative z-10">
-              Escolha seu veículo, aprove seu crédito e comece sua jornada em menos de 2 minutos.
-            </p>
-            
-            <button 
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="relative z-10 bg-slate-900 text-white text-lg font-bold px-12 py-5 rounded-full hover:bg-blue-600 hover:scale-105 transition-all shadow-2xl hover:shadow-blue-500/20"
-            >
-              Explorar Frota Agora
-            </button>
-          </div>
-        </section>
+        <div id="main-content" />
 
+        {/* 2. Banner Editorial */}
+        <EditorialRideBanner />
+
+        {/* 3. Faixa de Marcas com Spotlight */}
+        <BrandShowcaseStrip
+          onSelectBrand={(brand) =>
+            setFocusedBrand((prev) => ({ brand, seq: (prev?.seq ?? 0) + 1 }))
+          }
+        />
+
+        {/* 4. Comparativo Interativo de Frota sem Fundo */}
+        <FleetCompareSection
+          cars={cars}
+          isLoading={isLoadingCars}
+          focusedBrand={focusedBrand}
+          onSelectCar={handleOpenBooking}
+        />
+
+        {/* 5. Como Funciona a Experiência (Regras Arrive & Drive) */}
+        <ComoFuncionaSection />
+
+        {/* 6. Seção ApexPay (Gateway Sandbox, Pix Fictício & Fatura Pós-Paga) - Exclusiva para Pilotos/Clientes */}
+        {showApexPay && <ApexPaySection />}
       </main>
+
+      <Footer />
+
+      <BookingModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        car={selectedCar}
+      />
     </div>
   );
 }

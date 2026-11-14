@@ -2,66 +2,206 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  CheckCircle2, XCircle, Clock, Calendar, 
-  User, CarFront, Loader2, X, ChevronRight, FileText, Edit3, Send
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Calendar,
+  User,
+  CarFront,
+  Loader2,
+  X,
+  ChevronRight,
+  FileText,
+  Edit3,
+  Send,
+  Flag,
+  RefreshCw,
+  QrCode,
+  ScanLine,
 } from 'lucide-react';
 import { api } from '@/services/api';
+import { toast } from '@/store/useToastStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useCurrencyStore } from '@/store/useCurrencyStore';
+import { resolveStudioCarImage } from '@/lib/carPresentation';
+import { FiaQrPassModal, PitlaneQrValidatorModal } from '@/features/booking/components/FiaQrPassModal';
 
 interface Pedido {
   id: number;
+  trackingCode?: string;
+  qrCodePayload?: string;
+  qrCodeAssinatura?: string;
+  checkInRealizadoEm?: string | null;
+  tipoServico?: 'VISITA_BOX' | 'FAST_LAP' | 'TRACK_EXPERIENCE' | 'PACOTE_VIP' | string;
+  circuitoId?: string;
+  circuitoNome?: string;
+  trackSlot?: {
+    id: number;
+    data: string;
+    turno: string;
+    circuito?: { id: string; nome: string };
+  } | null;
   cliente: { nome: string; email: string; cpf?: string; profissao?: string };
-  automovel: { marca: string; modelo: string; placa: string; matricula: string; imageUrl?: string };
+  automovel?: {
+    marca: string;
+    modelo: string;
+    placa: string;
+    matricula: string;
+    imageUrl?: string;
+    circuito?: { id: string; nome: string };
+  } | null;
   dataInicio: string;
   dataFim: string;
-  status: 'PENDENTE_EMPRESA' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
+  valorTotal?: number;
+  valorFinal?: number;
+  valorSinistro?: number;
+  status: 'AGUARDANDO_APROVACAO' | 'PENDENTE_EMPRESA' | 'PENDENTE_BANCO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
   dataPedido: string;
 }
 
+interface TrackSlotOption {
+  id: number;
+  data: string;
+  turno: string;
+  vagasTotais: number;
+  vagasOcupadas: number;
+  taxaAdicionalTurno?: number;
+}
+
+type StatusFilter = 'TODOS' | 'PENDENTES' | 'APROVADO' | 'REJEITADO' | 'CANCELADO';
+
+const SERVICE_LABEL: Record<string, string> = {
+  VISITA_BOX: 'Visita ao Box / Paddock',
+  FAST_LAP: 'Fast Lap (Sessão Curta)',
+  TRACK_EXPERIENCE: 'Track Experience',
+  PACOTE_VIP: 'Pacote VIP Full Track',
+};
+
+const getStatusBadge = (status: Pedido['status']) => {
+  switch (status) {
+    case 'AGUARDANDO_APROVACAO':
+    case 'PENDENTE_EMPRESA':
+    case 'PENDENTE_BANCO':
+      return {
+        label: 'AGUARDANDO HOMOLOGAÇÃO',
+        cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+      };
+    case 'REVISAO_CLIENTE':
+      return {
+        label: 'AGUARDANDO CLIENTE',
+        cls: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+      };
+    case 'APROVADO':
+      return {
+        label: 'APROVADO',
+        cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+      };
+    case 'CANCELADO':
+      return {
+        label: 'CANCELADO',
+        cls: 'bg-white/10 text-white/60 border-white/15',
+      };
+    default:
+      return {
+        label: status,
+        cls: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+      };
+  }
+};
+
 export default function PedidosPage() {
+  const { user } = useAuthStore();
+  const { formatPrice } = useCurrencyStore();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<'TODOS' | 'PENDENTE_EMPRESA' | 'APROVADO' | 'REVISAO_CLIENTE'>('TODOS');
+  const [filter, setFilter] = useState<StatusFilter>('TODOS');
   const [pedidoSelecionado, setPedidoSelecionado] = useState<Pedido | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [syncingQr, setSyncingQr] = useState(false);
+  const [isValidatorOpen, setIsValidatorOpen] = useState(false);
+  const [qrModalPedido, setQrModalPedido] = useState<Pedido | null>(null);
 
-  // Estados para o Modo de Edição (Contraproposta)
+  // Estados para o Modo de Edição (Contraproposta + TrackSlot)
   const [isEditing, setIsEditing] = useState(false);
   const [editDates, setEditDates] = useState({ start: '', end: '' });
+  const [availableSlots, setAvailableSlots] = useState<TrackSlotOption[]>([]);
+  const [editSlotId, setEditSlotId] = useState<number | null>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   const fetchPedidos = async () => {
     try {
       setIsLoading(true);
       const response = await api.get('/api/pedidos');
-      setPedidos(response.data);
+      setPedidos(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
-      console.error("Erro ao carregar pedidos:", error);
+      console.error('Erro ao carregar pedidos:', error);
+      toast.error('Erro ao carregar sessões e reservas.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { fetchPedidos(); }, []);
+  useEffect(() => {
+    fetchPedidos();
+  }, []);
 
-  // Prepara as datas quando um pedido é selecionado
   useEffect(() => {
     if (pedidoSelecionado) {
-      // Formata a data ISO para o formato aceito pelo input datetime-local (YYYY-MM-DDThh:mm)
       setEditDates({
-        start: new Date(pedidoSelecionado.dataInicio).toISOString().slice(0, 16),
-        end: new Date(pedidoSelecionado.dataFim).toISOString().slice(0, 16)
+        start: pedidoSelecionado.dataInicio ? new Date(pedidoSelecionado.dataInicio).toISOString().slice(0, 16) : '',
+        end: pedidoSelecionado.dataFim ? new Date(pedidoSelecionado.dataFim).toISOString().slice(0, 16) : '',
       });
-      setIsEditing(false); // Sempre reseta o modo de edição ao abrir outro pedido
+      setEditSlotId(pedidoSelecionado.trackSlot?.id ?? null);
+      setAvailableSlots([]);
+      setIsEditing(false);
     }
   }, [pedidoSelecionado]);
+
+  useEffect(() => {
+    if (!isEditing || !pedidoSelecionado) return;
+    const circuitId =
+      pedidoSelecionado.trackSlot?.circuito?.id ||
+      pedidoSelecionado.circuitoId ||
+      pedidoSelecionado.automovel?.circuito?.id ||
+      'interlagos';
+
+    setLoadingSlots(true);
+    api
+      .get(`/api/slots/${circuitId}`)
+      .then((res) => {
+        setAvailableSlots(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch(() => setAvailableSlots([]))
+      .finally(() => setLoadingSlots(false));
+  }, [isEditing, pedidoSelecionado]);
+
+  const handleSelectEditSlot = (slot: TrackSlotOption) => {
+    setEditSlotId(slot.id);
+    const turno = (slot.turno || 'MANHA').toUpperCase();
+    const startH = turno === 'TARDE' ? '13:00' : turno === 'NOTURNO' ? '19:00' : '08:00';
+    const endH = turno === 'TARDE' ? '17:00' : turno === 'NOTURNO' ? '22:00' : '12:00';
+    setEditDates({
+      start: `${slot.data}T${startH}`,
+      end: `${slot.data}T${endH}`,
+    });
+  };
 
   const handleDecisao = async (id: number, novoStatus: 'APROVADO' | 'REJEITADO') => {
     try {
       setIsProcessing(true);
-      await api.put(`/api/pedidos/${id}/avaliar?status=${novoStatus}`);
-      atualizarEstadoLocal(id, novoStatus);
-    } catch (error) {
-      alert("Erro ao processar decisão.");
+      const response = await api.put(`/api/pedidos/${id}/avaliar?status=${novoStatus}`);
+      const statusFinal: Pedido['status'] =
+        response.data?.status || (novoStatus === 'APROVADO' ? 'APROVADO' : 'REJEITADO');
+      atualizarEstadoLocal(id, statusFinal);
+      if (statusFinal === 'APROVADO') {
+        toast.success('Sessão homologada com sucesso!');
+      } else {
+        toast.success('Sessão rejeitada e vaga liberada.');
+      }
+    } catch (error: any) {
+      const msg = error.response?.data?.message || 'Erro ao processar decisão.';
+      toast.error(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -73,178 +213,467 @@ export default function PedidosPage() {
       setIsProcessing(true);
       const payload = {
         dataInicio: editDates.start.length === 16 ? `${editDates.start}:00` : editDates.start,
-        dataFim: editDates.end.length === 16 ? `${editDates.end}:00` : editDates.end
+        dataFim: editDates.end.length === 16 ? `${editDates.end}:00` : editDates.end,
+        trackSlot: editSlotId ? { id: editSlotId } : undefined,
       };
-      
-      await api.put(`/api/pedidos/${pedidoSelecionado.id}/modificar`, payload);
-      
-      // Atualiza a lista e o painel com as novas datas e o novo status
-      setPedidos(prev => prev.map(p => p.id === pedidoSelecionado.id ? { ...p, status: 'REVISAO_CLIENTE', dataInicio: payload.dataInicio, dataFim: payload.dataFim } : p));
-      setPedidoSelecionado(prev => prev ? { ...prev, status: 'REVISAO_CLIENTE', dataInicio: payload.dataInicio, dataFim: payload.dataFim } : null);
+
+      const res = await api.put(`/api/pedidos/${pedidoSelecionado.id}/modificar`, payload);
+      const updated = res.data;
+
+      setPedidos((prev) =>
+        prev.map((p) =>
+          p.id === pedidoSelecionado.id
+            ? {
+                ...p,
+                status: 'REVISAO_CLIENTE',
+                dataInicio: updated?.dataInicio || payload.dataInicio,
+                dataFim: updated?.dataFim || payload.dataFim,
+                valorTotal: updated?.valorTotal ?? p.valorTotal,
+                valorFinal: updated?.valorFinal ?? p.valorFinal,
+                trackSlot: updated?.trackSlot ?? p.trackSlot,
+              }
+            : p
+        )
+      );
+      setPedidoSelecionado((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'REVISAO_CLIENTE',
+              dataInicio: updated?.dataInicio || payload.dataInicio,
+              dataFim: updated?.dataFim || payload.dataFim,
+              valorTotal: updated?.valorTotal ?? prev.valorTotal,
+              valorFinal: updated?.valorFinal ?? prev.valorFinal,
+              trackSlot: updated?.trackSlot ?? prev.trackSlot,
+            }
+          : null
+      );
       setIsEditing(false);
-    } catch (error) {
-      alert("Erro ao enviar contraproposta.");
+      toast.success('Contraproposta de slot/horário enviada ao piloto!');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Erro ao enviar contraproposta.');
     } finally {
       setIsProcessing(false);
     }
   };
 
   const atualizarEstadoLocal = (id: number, novoStatus: Pedido['status']) => {
-    setPedidos(prev => prev.map(p => p.id === id ? { ...p, status: novoStatus } : p));
+    setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, status: novoStatus } : p)));
     if (pedidoSelecionado?.id === id) {
-      setPedidoSelecionado(prev => prev ? { ...prev, status: novoStatus } : null);
+      setPedidoSelecionado((prev) => (prev ? { ...prev, status: novoStatus } : null));
     }
   };
 
-  const pedidosFiltrados = pedidos.filter(p => filter === 'TODOS' || p.status === filter);
+  const handleSyncQrCodes = async () => {
+    try {
+      setSyncingQr(true);
+      const res = await api.post('/api/pedidos/qrcode/task');
+      const rel = res.data || {};
+      toast.success(
+        `Task concluída: ${rel.qrCodesGeradosOuAtualizados ?? 0} QR Codes gerados/atualizados (${rel.totalSessoes ?? 0} sessões).`
+      );
+      await fetchPedidos();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Erro ao executar task de geração de QR Codes.');
+    } finally {
+      setSyncingQr(false);
+    }
+  };
+
+  const pedidosFiltrados = pedidos.filter((p) => {
+    if (filter === 'TODOS') return true;
+    if (filter === 'PENDENTES') {
+      return (
+        p.status === 'AGUARDANDO_APROVACAO' ||
+        p.status === 'PENDENTE_EMPRESA' ||
+        p.status === 'PENDENTE_BANCO' ||
+        p.status === 'REVISAO_CLIENTE'
+      );
+    }
+    return p.status === filter;
+  });
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pt-24 pb-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+    <div className="min-h-screen bg-[#08090C] text-white pt-28 pb-24 selection:bg-[#FF1717] selection:text-white">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+        <header className="pb-8 border-b border-white/10 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Gestão de Pedidos</h1>
-            <p className="text-slate-500 mt-1">Analise contratos, aprove ou sugira novas datas.</p>
+            <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[#FF1717] mb-2">
+              Race Control · Sessões &amp; Reservas
+            </p>
+            <h1 className="text-3xl sm:text-4xl font-medium tracking-tight text-white">
+              Gestão de Sessões &amp; Pedidos
+            </h1>
+            <p className="text-sm text-white/60 mt-2">
+              Analise reservas de pista, aprove sessões em fila ou proponha novas janelas de bateria.
+            </p>
           </div>
 
-          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
-            {['TODOS', 'PENDENTE_EMPRESA', 'REVISAO_CLIENTE', 'APROVADO'].map((f) => (
+          <div className="flex flex-wrap items-center gap-2">
+            {(
+              [
+                { id: 'TODOS', label: 'Todos' },
+                { id: 'PENDENTES', label: 'Pendentes' },
+                { id: 'APROVADO', label: 'Aprovados' },
+                { id: 'REJEITADO', label: 'Rejeitados' },
+                { id: 'CANCELADO', label: 'Cancelados' },
+              ] as const
+            ).map((f) => (
               <button
-                key={f}
-                onClick={() => setFilter(f as any)}
-                className={`px-5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${filter === f ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-500 hover:text-slate-900'}`}
+                key={f.id}
+                type="button"
+                onClick={() => setFilter(f.id)}
+                className={`px-4 py-2 rounded-full text-xs font-medium transition-all cursor-pointer border whitespace-nowrap ${
+                  filter === f.id
+                    ? 'bg-[#FF1717] text-white border-[#FF1717]'
+                    : 'bg-white/[0.03] text-white/65 border-white/10 hover:text-white'
+                }`}
               >
-                {f === 'REVISAO_CLIENTE' ? 'Em Revisão' : f.charAt(0) + f.slice(1).toLowerCase()}
+                {f.label}
               </button>
             ))}
+
+            <button
+              type="button"
+              onClick={() => setIsValidatorOpen(true)}
+              className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-medium text-white transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <ScanLine size={14} className="text-[#FF1717]" />
+              <span>Validador QR / Check-in Box</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSyncQrCodes}
+              disabled={syncingQr}
+              className="px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-medium text-white/85 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {syncingQr ? <Loader2 size={14} className="animate-spin text-[#FF1717]" /> : <QrCode size={14} className="text-emerald-400" />}
+              <span>Sincronizar QR Codes</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={fetchPedidos}
+              className="p-2 rounded-full bg-white/[0.04] hover:bg-white/10 border border-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+              title="Atualizar lista"
+            >
+              <RefreshCw size={15} />
+            </button>
           </div>
         </header>
 
-        {/* ... (O meio do código com a lista de cards não mudou. Mantive igual para focar no Slide-over) ... */}
         {isLoading ? (
-          <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-600" size={40} /></div>
+          <div className="flex flex-col items-center justify-center py-24 gap-3 text-white/50">
+            <Loader2 className="animate-spin text-[#FF1717]" size={32} />
+            <span className="text-xs font-mono uppercase tracking-widest">Carregando sessões...</span>
+          </div>
         ) : pedidosFiltrados.length === 0 ? (
-          <div className="bg-white border border-dashed border-slate-200 rounded-[32px] p-20 text-center">
-            <Clock size={48} className="mx-auto text-slate-200 mb-4" />
-            <h3 className="text-xl font-bold text-slate-900">Nenhum pedido encontrado</h3>
-            <p className="text-slate-500">A fila de avaliações está vazia no momento.</p>
+          <div className="bg-[#11131A] border border-white/[0.08] rounded-2xl p-16 text-center">
+            <Clock size={40} className="mx-auto text-white/25 mb-4" />
+            <h3 className="text-lg font-medium text-white">Nenhuma sessão encontrada</h3>
+            <p className="text-sm text-white/50 mt-1">
+              Não há pedidos para o filtro selecionado no momento.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence mode="popLayout">
-              {pedidosFiltrados.map((pedido) => (
-                <motion.div
-                  key={pedido.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={() => setPedidoSelecionado(pedido)}
-                  className="group bg-white border border-slate-200 hover:border-blue-300 rounded-[24px] overflow-hidden shadow-sm hover:shadow-xl transition-all cursor-pointer flex flex-col"
-                >
-                  <div className="aspect-video w-full bg-slate-100 relative overflow-hidden">
-                    {pedido.automovel.imageUrl ? (
-                      <img src={pedido.automovel.imageUrl} alt={pedido.automovel.modelo} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center"><CarFront size={40} className="text-slate-300" /></div>
-                    )}
-                    <div className="absolute top-4 left-4">
-                      <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${
-                        pedido.status === 'PENDENTE_EMPRESA' ? 'bg-amber-100 text-amber-700' :
-                        pedido.status === 'REVISAO_CLIENTE' ? 'bg-purple-100 text-purple-700' :
-                        pedido.status === 'APROVADO' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {pedido.status === 'REVISAO_CLIENTE' ? 'AGUARDANDO CLIENTE' : pedido.status}
-                      </span>
-                    </div>
-                  </div>
+              {pedidosFiltrados.map((pedido) => {
+                const titulo =
+                  pedido.automovel ? `${pedido.automovel.marca} ${pedido.automovel.modelo}` : SERVICE_LABEL[pedido.tipoServico || ''] || 'Visita ao Paddock';
+                const servicoLabel = SERVICE_LABEL[pedido.tipoServico || ''] || pedido.tipoServico || 'Sessão em Pista';
+                const badge = getStatusBadge(pedido.status);
+                const valorExibido = pedido.valorFinal ?? pedido.valorTotal ?? 0;
 
-                  <div className="p-6 flex-1 flex flex-col">
-                    <h3 className="text-xl font-bold text-slate-900 mb-1">{pedido.automovel.modelo}</h3>
-                    <p className="text-sm text-slate-500 mb-4">{pedido.cliente.nome}</p>
-                    
-                    <div className="mt-auto flex items-center justify-between pt-4 border-t border-slate-100">
-                      <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                        <Calendar size={16} className="text-slate-400" />
-                        {new Date(pedido.dataInicio).toLocaleDateString('pt-BR')}
+                return (
+                  <motion.div
+                    key={pedido.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    onClick={() => setPedidoSelecionado(pedido)}
+                    className="group bg-[#11131A] border border-white/[0.08] hover:border-[#FF1717]/40 rounded-2xl overflow-hidden transition-all cursor-pointer flex flex-col"
+                  >
+                    {/* Palco Studio Escuro */}
+                    <div className="h-44 w-full bg-[#08090C] relative overflow-hidden flex items-center justify-center p-4">
+                      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.06)_0%,transparent_72%)] pointer-events-none" />
+                      {pedido.automovel ? (
+                        <img
+                          src={resolveStudioCarImage(pedido.automovel)}
+                          alt={titulo}
+                          className="relative z-10 w-full h-full object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.9)] group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="relative z-10 flex flex-col items-center justify-center text-white/50">
+                          {pedido.tipoServico === 'VISITA_BOX' ? (
+                            <Flag size={34} className="text-[#FF1717] mb-2" />
+                          ) : (
+                            <CarFront size={34} className="text-white/40 mb-2" />
+                          )}
+                          <span className="text-[11px] font-mono uppercase tracking-widest text-white/60">
+                            {pedido.circuitoNome || 'Apex Paddock'}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="absolute top-3 left-3 z-20">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border ${badge.cls}`}
+                        >
+                          {badge.label}
+                        </span>
                       </div>
-                      <div className="text-blue-600 group-hover:translate-x-1 transition-transform">
-                        <ChevronRight size={20} />
+
+                      {pedido.trackingCode && (
+                        <span className="absolute top-3 right-3 z-20 px-2 py-0.5 rounded bg-black/60 border border-white/10 text-[10px] font-mono text-white/65">
+                          #{pedido.trackingCode}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-5 flex-1 flex flex-col border-t border-white/[0.06]">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-white/45 mb-1">
+                        {servicoLabel} {pedido.circuitoNome ? `· ${pedido.circuitoNome}` : ''}
+                      </span>
+                      <h3 className="text-lg font-medium text-white truncate mb-1">{titulo}</h3>
+                      <p className="text-xs text-white/55 mb-4 truncate">
+                        Piloto: <span className="text-white/85">{pedido.cliente?.nome || 'Piloto'}</span>
+                      </p>
+
+                      <div className="mt-auto flex items-center justify-between pt-3.5 border-t border-white/[0.08]">
+                        <div className="flex items-center gap-2 text-xs text-white/65">
+                          <Calendar size={14} className="text-[#FF1717]" />
+                          <span className="font-mono">
+                            {pedido.dataInicio ? new Date(pedido.dataInicio).toLocaleDateString('pt-BR') : 'A definir'}
+                          </span>
+                          <span className="ml-2 text-sm font-semibold text-white tabular-nums">
+                            {formatPrice(valorExibido)}
+                          </span>
+                        </div>
+                        <ChevronRight
+                          size={18}
+                          className="text-white/40 group-hover:text-[#FF1717] group-hover:translate-x-0.5 transition-all"
+                        />
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </div>
         )}
       </div>
 
-      {/* PAINEL LATERAL DE DETALHES COM MODO EDIÇÃO */}
+      {/* PAINEL LATERAL DE DETALHES COM MODO EDIÇÃO (DARK LUXURY) */}
       <AnimatePresence>
         {pedidoSelecionado && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPedidoSelecionado(null)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100]" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-[101] flex flex-col overflow-hidden">
-              
-              <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50/50">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <FileText size={20} className="text-blue-600" /> Detalhes do Contrato
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPedidoSelecionado(null)}
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm z-[120]"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+              className="fixed top-0 right-0 bottom-0 w-full max-w-md bg-[#0D1017] border-l border-white/10 text-white shadow-2xl z-[121] flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#11131A]">
+                <h2 className="text-base font-medium text-white flex items-center gap-2">
+                  <FileText size={18} className="text-[#FF1717]" /> Detalhes da Sessão
                 </h2>
-                <button onClick={() => setPedidoSelecionado(null)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+                <button
+                  type="button"
+                  onClick={() => setPedidoSelecionado(null)}
+                  className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-8">
-                <div className="aspect-video w-full bg-slate-100 rounded-2xl overflow-hidden relative shadow-inner">
-                  {pedidoSelecionado.automovel.imageUrl ? (
-                    <img src={pedidoSelecionado.automovel.imageUrl} alt="Carro" className="w-full h-full object-cover" />
-                  ) : <div className="w-full h-full flex items-center justify-center"><CarFront size={48} className="text-slate-300" /></div>}
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6">
+                <div className="h-44 w-full bg-[#08090C] border border-white/[0.08] rounded-2xl overflow-hidden relative flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.06)_0%,transparent_72%)] pointer-events-none" />
+                  {pedidoSelecionado.automovel ? (
+                    <img
+                      src={resolveStudioCarImage(pedidoSelecionado.automovel)}
+                      alt={pedidoSelecionado.automovel.modelo}
+                      className="relative z-10 w-full h-full object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.9)]"
+                    />
+                  ) : (
+                    <div className="relative z-10 flex flex-col items-center justify-center text-white/60">
+                      <Flag size={36} className="text-[#FF1717] mb-2" />
+                      <span className="text-xs font-mono uppercase tracking-widest">
+                        {pedidoSelecionado.circuitoNome || 'Paddock Apex'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Veículo Solicitado</p>
-                  <h3 className="text-2xl font-bold text-slate-900">{pedidoSelecionado.automovel.modelo}</h3>
-                  <p className="text-slate-600 font-medium mt-1">{pedidoSelecionado.automovel.marca} • Placa: {pedidoSelecionado.automovel.placa}</p>
+                  <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#FF1717] mb-1">
+                    {SERVICE_LABEL[pedidoSelecionado.tipoServico || ''] || 'Experiência Solicitada'}
+                  </p>
+                  <h3 className="text-xl font-medium text-white">
+                    {pedidoSelecionado.automovel
+                      ? `${pedidoSelecionado.automovel.marca} ${pedidoSelecionado.automovel.modelo}`
+                      : 'Visita ao Box / Telemetria'}
+                  </h3>
+                  <p className="text-xs text-white/55 font-mono mt-1">
+                    {pedidoSelecionado.automovel
+                      ? `Placa: ${pedidoSelecionado.automovel.placa} · Matrícula: ${pedidoSelecionado.automovel.matricula}`
+                      : `Circuito: ${pedidoSelecionado.circuitoNome || 'Paddock'}`}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {pedidoSelecionado.trackingCode && (
+                      <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-white/80 text-[11px] font-mono">
+                        #{pedidoSelecionado.trackingCode}
+                      </span>
+                    )}
+                    {pedidoSelecionado.trackSlot && (
+                      <span className="px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-white/80 text-[11px] font-mono">
+                        Turno {pedidoSelecionado.trackSlot.turno}
+                      </span>
+                    )}
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-mono font-semibold">
+                      {formatPrice(pedidoSelecionado.valorFinal ?? pedidoSelecionado.valorTotal ?? 0)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setQrModalPedido(pedidoSelecionado)}
+                    className="mt-4 w-full py-2.5 px-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 hover:border-[#FF1717]/40 text-xs font-medium text-white flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <QrCode size={15} className="text-[#FF1717]" />
+                    <span>Ver Credencial QR Code (HMAC-SHA256)</span>
+                  </button>
                 </div>
 
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Dados do Cliente</p>
+                <div className="bg-[#11131A] rounded-2xl p-5 border border-white/[0.08]">
+                  <p className="text-[10px] font-mono text-white/45 uppercase tracking-widest mb-3">
+                    Dados do Piloto
+                  </p>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-slate-400 shadow-sm"><User size={18} /></div>
-                    <div>
-                      <p className="font-bold text-slate-900">{pedidoSelecionado.cliente.nome}</p>
-                      <p className="text-sm text-slate-500">{pedidoSelecionado.cliente.email}</p>
+                    <div className="w-10 h-10 bg-white/[0.06] border border-white/10 rounded-full flex items-center justify-center text-white/60">
+                      <User size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-white truncate">{pedidoSelecionado.cliente?.nome}</p>
+                      <p className="text-xs text-white/50 font-mono truncate">{pedidoSelecionado.cliente?.email}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Bloco de Datas: Alterna entre Leitura e Edição */}
-                <div className={`rounded-2xl p-5 border transition-colors ${isEditing ? 'bg-amber-50/50 border-amber-200' : 'bg-blue-50/50 border-blue-100'}`}>
+                <div
+                  className={`rounded-2xl p-5 border transition-colors ${
+                    isEditing
+                      ? 'bg-amber-500/10 border-amber-500/30'
+                      : 'bg-[#11131A] border-white/[0.08]'
+                  }`}
+                >
                   <div className="flex justify-between items-center mb-4">
-                    <p className={`text-[10px] font-black uppercase tracking-widest ${isEditing ? 'text-amber-600' : 'text-blue-500'}`}>Período do Aluguel</p>
-                    {!isEditing && pedidoSelecionado.status === 'PENDENTE_EMPRESA' && (
-                      <button onClick={() => setIsEditing(true)} className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                        <Edit3 size={12} /> Sugerir Novas Datas
-                      </button>
-                    )}
+                    <p
+                      className={`text-[10px] font-mono uppercase tracking-widest ${
+                        isEditing ? 'text-amber-300' : 'text-white/45'
+                      }`}
+                    >
+                      Janela da Sessão
+                    </p>
+                    {!isEditing &&
+                      ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
+                        pedidoSelecionado.status
+                      ) &&
+                      user?.role === 'ADMIN' && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditing(true)}
+                          className="text-xs font-medium text-[#FF1717] hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Edit3 size={12} /> Propor Novo Slot / Horário
+                        </button>
+                      )}
                   </div>
-                  
+
                   <div className="space-y-4">
+                    {isEditing && (
+                      <div>
+                        <label className="text-[11px] text-amber-200/80 mb-1.5 block font-mono uppercase tracking-wider">
+                          Trocar Slot no Autódromo (Opcional)
+                        </label>
+                        {loadingSlots ? (
+                          <div className="flex items-center gap-2 text-xs text-white/50 py-2">
+                            <Loader2 size={13} className="animate-spin" /> Carregando turnos disponíveis...
+                          </div>
+                        ) : availableSlots.length === 0 ? (
+                          <p className="text-[11px] text-white/50">
+                            Nenhum turno pré-gerado encontrado; ajuste as datas manualmente abaixo.
+                          </p>
+                        ) : (
+                          <select
+                            value={editSlotId ?? ''}
+                            onChange={(e) => {
+                              const id = Number(e.target.value);
+                              const chosen = availableSlots.find((s) => s.id === id);
+                              if (chosen) handleSelectEditSlot(chosen);
+                            }}
+                            className="w-full bg-[#08090C] border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-white focus:border-[#FF1717] outline-none font-mono"
+                          >
+                            <option value="">Manter janela manual</option>
+                            {availableSlots.map((slot) => {
+                              const livres = slot.vagasTotais - slot.vagasOcupadas;
+                              return (
+                                <option key={slot.id} value={slot.id} disabled={livres <= 0 && slot.id !== pedidoSelecionado.trackSlot?.id}>
+                                  {slot.data.split('-').reverse().join('/')} · {slot.turno} ({livres} vagas livres)
+                                </option>
+                              );
+                            })}
+                          </select>
+                        )}
+                      </div>
+                    )}
                     <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Retirada</label>
+                      <label className="text-[11px] text-white/50 mb-1 block">Início da Sessão</label>
                       {isEditing ? (
-                        <input type="datetime-local" value={editDates.start} onChange={e => setEditDates({...editDates, start: e.target.value})} className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+                        <input
+                          type="datetime-local"
+                          value={editDates.start}
+                          onChange={(e) => setEditDates({ ...editDates, start: e.target.value })}
+                          className="w-full bg-[#08090C] border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-white focus:border-[#FF1717] outline-none font-mono"
+                        />
                       ) : (
-                        <p className="font-bold text-slate-900">{new Date(pedidoSelecionado.dataInicio).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                        <p className="text-sm font-mono text-white">
+                          {new Date(pedidoSelecionado.dataInicio).toLocaleString('pt-BR', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                        </p>
                       )}
                     </div>
                     <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Devolução</label>
+                      <label className="text-[11px] text-white/50 mb-1 block">Fim da Sessão</label>
                       {isEditing ? (
-                        <input type="datetime-local" value={editDates.end} onChange={e => setEditDates({...editDates, end: e.target.value})} className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+                        <input
+                          type="datetime-local"
+                          value={editDates.end}
+                          onChange={(e) => setEditDates({ ...editDates, end: e.target.value })}
+                          className="w-full bg-[#08090C] border border-amber-500/40 rounded-xl px-3 py-2 text-xs text-white focus:border-[#FF1717] outline-none font-mono"
+                        />
                       ) : (
-                        <p className="font-bold text-slate-900">{new Date(pedidoSelecionado.dataFim).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                        <p className="text-sm font-mono text-white">
+                          {new Date(pedidoSelecionado.dataFim).toLocaleString('pt-BR', {
+                            dateStyle: 'short',
+                            timeStyle: 'short',
+                          })}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -252,36 +681,119 @@ export default function PedidosPage() {
               </div>
 
               {/* Footer Dinâmico */}
-              <div className="p-6 border-t border-slate-100 bg-white shrink-0">
+              <div className="p-6 border-t border-white/10 bg-[#11131A] shrink-0">
                 {isEditing ? (
                   <div className="flex gap-3">
-                    <button onClick={() => setIsEditing(false)} className="flex-1 py-3.5 px-4 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Cancelar</button>
-                    <button onClick={handleEnviarContraproposta} disabled={isProcessing} className="flex-[2] py-3.5 px-4 rounded-xl font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-2">
-                      {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <><Send size={18} /> Enviar Contraproposta</>}
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="flex-1 py-3 px-4 rounded-full text-xs font-medium text-white/75 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEnviarContraproposta}
+                      disabled={isProcessing}
+                      className="flex-[2] py-3 px-4 rounded-full text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isProcessing ? (
+                        <Loader2 className="animate-spin" size={16} />
+                      ) : (
+                        <>
+                          <Send size={15} /> Enviar Contraproposta
+                        </>
+                      )}
                     </button>
                   </div>
-                ) : pedidoSelecionado.status === 'PENDENTE_EMPRESA' ? (
-                  <div className="flex gap-3">
-                    <button onClick={() => handleDecisao(pedidoSelecionado.id, 'REJEITADO')} disabled={isProcessing} className="flex-1 py-3.5 px-4 rounded-xl font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"><XCircle className="mx-auto" size={20} /></button>
-                    <button onClick={() => handleDecisao(pedidoSelecionado.id, 'APROVADO')} disabled={isProcessing} className="flex-[3] py-3.5 px-4 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2">
-                      {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <><CheckCircle2 size={18} /> Aprovar Original</>}
-                    </button>
-                  </div>
+                ) : ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
+                    pedidoSelecionado.status
+                  ) ? (
+                  user?.role === 'ADMIN' ? (
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleDecisao(pedidoSelecionado.id, 'REJEITADO')}
+                        disabled={isProcessing}
+                        className="flex-1 py-3 px-4 rounded-full text-xs font-medium text-rose-300 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <XCircle size={15} />
+                        <span>Rejeitar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDecisao(pedidoSelecionado.id, 'APROVADO')}
+                        disabled={isProcessing}
+                        className="flex-[2] py-3 px-4 rounded-full text-xs font-semibold text-white bg-[#FF1717] hover:bg-[#e01414] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {isProcessing ? (
+                          <Loader2 className="animate-spin" size={15} />
+                        ) : (
+                          <>
+                            <CheckCircle2 size={15} /> Aprovar Sessão
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-medium">
+                      <Clock size={15} /> Aguardando homologação do Race Control
+                    </div>
+                  )
                 ) : (
-                  <div className={`w-full py-4 rounded-xl font-bold text-center flex items-center justify-center gap-2 ${
-                    pedidoSelecionado.status === 'APROVADO' ? 'bg-green-50 text-green-600' : 
-                    pedidoSelecionado.status === 'REVISAO_CLIENTE' ? 'bg-purple-50 text-purple-600' : 'bg-red-50 text-red-600'
-                  }`}>
-                    {pedidoSelecionado.status === 'REVISAO_CLIENTE' ? <Clock size={20} /> : pedidoSelecionado.status === 'APROVADO' ? <CheckCircle2 size={20} /> : <XCircle size={20} />}
-                    {pedidoSelecionado.status === 'REVISAO_CLIENTE' ? 'AGUARDANDO CLIENTE' : `PEDIDO ${pedidoSelecionado.status}`}
+                  <div
+                    className={`w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 text-xs font-mono uppercase tracking-wider border ${
+                      pedidoSelecionado.status === 'APROVADO'
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                        : pedidoSelecionado.status === 'REVISAO_CLIENTE'
+                          ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                          : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                    }`}
+                  >
+                    {pedidoSelecionado.status === 'REVISAO_CLIENTE' ? (
+                      <Clock size={16} />
+                    ) : pedidoSelecionado.status === 'APROVADO' ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <XCircle size={16} />
+                    )}
+                    {pedidoSelecionado.status === 'REVISAO_CLIENTE'
+                      ? 'AGUARDANDO CLIENTE'
+                      : pedidoSelecionado.status === 'APROVADO'
+                        ? 'SESSÃO CONFIRMADA'
+                        : `PEDIDO ${pedidoSelecionado.status}`}
                   </div>
                 )}
               </div>
-
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      {qrModalPedido && (
+        <FiaQrPassModal
+          isOpen={Boolean(qrModalPedido)}
+          onClose={() => setQrModalPedido(null)}
+          pedidoId={qrModalPedido.id}
+          initialTrackingCode={qrModalPedido.trackingCode}
+          initialPayload={qrModalPedido.qrCodePayload}
+          initialAssinatura={qrModalPedido.qrCodeAssinatura}
+          initialCheckInEm={qrModalPedido.checkInRealizadoEm}
+          isAdmin
+          onCheckInCompleted={(id, checkInEm) => {
+            setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, checkInRealizadoEm: checkInEm } : p)));
+            if (pedidoSelecionado?.id === id) {
+              setPedidoSelecionado((prev) => (prev ? { ...prev, checkInRealizadoEm: checkInEm } : null));
+            }
+          }}
+        />
+      )}
+
+      <PitlaneQrValidatorModal
+        isOpen={isValidatorOpen}
+        onClose={() => setIsValidatorOpen(false)}
+        onValidated={fetchPedidos}
+      />
     </div>
   );
 }

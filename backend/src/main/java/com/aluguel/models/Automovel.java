@@ -1,8 +1,11 @@
 package com.aluguel.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.micronaut.serde.annotation.Serdeable;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Serdeable
 @Entity
@@ -29,15 +32,43 @@ public class Automovel {
     private String placa;     
 
     @Column
-    private String imageUrl; // URL vinda do Cloudinary
+    private String imageUrl; // URL vinda do Cloudinary ou asset local
 
     @Column(nullable = false)
     private BigDecimal precoPorDia;
 
     @ManyToOne
     @JoinColumn(name = "proprietario_id", nullable = false)
+    @JsonIgnoreProperties({"senha", "saldoCarteira", "totalDepositadoHistorico", "statusFinanceiro", "rendimentos", "cpf", "rg", "cnhNumero", "cnhCategoria", "dataNascimento"})
     private Usuario proprietario;
-    
+
+    // --- 🏎️ CAMPOS DO APEX TRACK EXPERIENCE ---
+    @ManyToOne
+    @JoinColumn(name = "circuito_id")
+    private Circuito circuito;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "automovel_circuitos",
+        joinColumns = @JoinColumn(name = "automovel_id"),
+        inverseJoinColumns = @JoinColumn(name = "circuito_id")
+    )
+    private Set<Circuito> circuitosDisponiveis = new LinkedHashSet<>();
+
+    @Column
+    private Integer potenciaCv;
+
+    @Column(length = 20)
+    private String aceleracao0a100;
+
+    @Column(length = 30)
+    private String velocidadeMaxima;
+
+    @Column(length = 30)
+    private String categoria; // GT3, HYPERCAR, TRACK_PACK
+
+    @Column(nullable = false)
+    private boolean ativoBox = true;
 
     public Automovel() {}
 
@@ -60,4 +91,27 @@ public class Automovel {
     public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
     public BigDecimal getPrecoPorDia() { return precoPorDia; }
     public void setPrecoPorDia(BigDecimal precoPorDia) { this.precoPorDia = precoPorDia; }
+
+    public Circuito getCircuito() { return circuito; }
+    public void setCircuito(Circuito circuito) { this.circuito = circuito; }
+    public Set<Circuito> getCircuitosDisponiveis() { return circuitosDisponiveis; }
+    public void setCircuitosDisponiveis(Set<Circuito> circuitosDisponiveis) { this.circuitosDisponiveis = circuitosDisponiveis; }
+    public void adicionarCircuito(Circuito c) {
+        if (c != null) {
+            if (this.circuito == null) {
+                this.circuito = c;
+            }
+            this.circuitosDisponiveis.add(c);
+        }
+    }
+    public Integer getPotenciaCv() { return potenciaCv; }
+    public void setPotenciaCv(Integer potenciaCv) { this.potenciaCv = potenciaCv; }
+    public String getAceleracao0a100() { return aceleracao0a100; }
+    public void setAceleracao0a100(String aceleracao0a100) { this.aceleracao0a100 = aceleracao0a100; }
+    public String getVelocidadeMaxima() { return velocidadeMaxima; }
+    public void setVelocidadeMaxima(String velocidadeMaxima) { this.velocidadeMaxima = velocidadeMaxima; }
+    public String getCategoria() { return categoria; }
+    public void setCategoria(String categoria) { this.categoria = categoria; }
+    public boolean isAtivoBox() { return ativoBox; }
+    public void setAtivoBox(boolean ativoBox) { this.ativoBox = ativoBox; }
 }

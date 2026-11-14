@@ -2,108 +2,300 @@ package com.aluguel.security;
 
 import com.aluguel.models.*;
 import com.aluguel.repositories.*;
+import com.aluguel.services.QrCodePassService;
 import io.micronaut.context.event.StartupEvent;
 import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.inject.Singleton;
+import jakarta.transaction.Transactional;
 import org.mindrot.jbcrypt.BCrypt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Singleton
 public class DataInitializer {
 
+    private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
+
     private final UsuarioRepository usuarioRepository;
     private final AgenteRepository agenteRepository;
-    private final ClienteRepository clienteRepository;
     private final AutomovelRepository automovelRepository;
+    private final CircuitoRepository circuitoRepository;
+    private final TrackSlotRepository trackSlotRepository;
+    private final PedidoRepository pedidoRepository;
+    private final TransacaoApexPayRepository transacaoRepository;
+    private final QrCodePassService qrCodePassService;
 
     public DataInitializer(UsuarioRepository usuarioRepository,
                            AgenteRepository agenteRepository,
-                           ClienteRepository clienteRepository,
-                           AutomovelRepository automovelRepository) {
+                           AutomovelRepository automovelRepository,
+                           CircuitoRepository circuitoRepository,
+                           TrackSlotRepository trackSlotRepository,
+                           PedidoRepository pedidoRepository,
+                           TransacaoApexPayRepository transacaoRepository,
+                           QrCodePassService qrCodePassService) {
         this.usuarioRepository = usuarioRepository;
         this.agenteRepository = agenteRepository;
-        this.clienteRepository = clienteRepository;
         this.automovelRepository = automovelRepository;
+        this.circuitoRepository = circuitoRepository;
+        this.trackSlotRepository = trackSlotRepository;
+        this.pedidoRepository = pedidoRepository;
+        this.transacaoRepository = transacaoRepository;
+        this.qrCodePassService = qrCodePassService;
     }
 
     @EventListener
+    @Transactional
     public void onStartup(StartupEvent event) {
-        // Se ainda não houver usuários cadastrados, inicializa os perfis padrão para teste
-        if (usuarioRepository.count() == 0) {
-            String senhaPadrao = BCrypt.hashpw("123456", BCrypt.gensalt());
+        // 1. Inicializa os 8 circuitos internacionais de alta velocidade se ainda não existirem
+        Map<String, Circuito> circuitosMap = new HashMap<>();
+        if (circuitoRepository.count() == 0) {
+            circuitosMap.put("nurburgring", circuitoRepository.save(new Circuito(
+                    "nurburgring", "Nürburgring Nordschleife", "Alemanha", "Europa",
+                    new BigDecimal("20.832"), 73, "6:35.183", 45
+            )));
+            circuitosMap.put("spa", circuitoRepository.save(new Circuito(
+                    "spa", "Circuit de Spa-Francorchamps", "Bélgica", "Europa",
+                    new BigDecimal("7.004"), 19, "1:41.252", 40
+            )));
+            circuitosMap.put("monza", circuitoRepository.save(new Circuito(
+                    "monza", "Autodromo Nazionale Monza", "Itália", "Europa",
+                    new BigDecimal("5.793"), 11, "1:18.887", 35
+            )));
+            circuitosMap.put("monaco", circuitoRepository.save(new Circuito(
+                    "monaco", "Circuit de Monaco", "Mônaco", "Europa",
+                    new BigDecimal("3.337"), 19, "1:10.166", 25
+            )));
+            circuitosMap.put("le_mans", circuitoRepository.save(new Circuito(
+                    "le_mans", "Circuit de la Sarthe (Le Mans)", "França", "Europa",
+                    new BigDecimal("13.626"), 38, "3:14.791", 62
+            )));
+            circuitosMap.put("silverstone", circuitoRepository.save(new Circuito(
+                    "silverstone", "Silverstone Circuit", "Reino Unido", "Europa",
+                    new BigDecimal("5.891"), 18, "1:24.303", 40
+            )));
+            circuitosMap.put("interlagos", circuitoRepository.save(new Circuito(
+                    "interlagos", "Autódromo de Interlagos", "Brasil", "América do Sul",
+                    new BigDecimal("4.309"), 15, "1:07.281", 30
+            )));
+            circuitosMap.put("suzuka", circuitoRepository.save(new Circuito(
+                    "suzuka", "Suzuka International Racing Course", "Japão", "Ásia",
+                    new BigDecimal("5.807"), 18, "1:27.064", 35
+            )));
+        } else {
+            circuitoRepository.findAll().forEach(c -> circuitosMap.put(c.getId(), c));
+        }
 
-            // 1. Empresa / Locadora Padrão
-            Agente empresa = new Agente();
-            empresa.setNome("Localiza Prime Motors");
-            empresa.setEmail("empresa@rentcars.com");
-            empresa.setSenha(senhaPadrao);
-            empresa.setRole("ROLE_EMPRESA");
-            empresa.setEndereco("Av. Raja Gabaglia, 2000 - Belo Horizonte, MG");
-            empresa.setCnpj("12345678000199");
-            empresa = agenteRepository.save(empresa);
+        // Limpa slots residuais sem reservas em dias de manutenção (segunda-feira) ou noturnos de terça a quinta
+        trackSlotRepository.findAll().forEach(slot -> {
+            if (slot.getVagasOcupadas() != null && slot.getVagasOcupadas() == 0 && slot.getData() != null) {
+                DayOfWeek dow = slot.getData().getDayOfWeek();
+                boolean isSegunda = dow == DayOfWeek.MONDAY;
+                boolean isNoturnoMeioSemana = "NOTURNO".equalsIgnoreCase(slot.getTurno())
+                        && (dow == DayOfWeek.TUESDAY || dow == DayOfWeek.WEDNESDAY || dow == DayOfWeek.THURSDAY);
+                if (isSegunda || isNoturnoMeioSemana) {
+                    trackSlotRepository.delete(slot);
+                }
+            }
+        });
 
-            // 2. Banco / Agente Financeiro Padrão
-            Agente banco = new Agente();
-            banco.setNome("Banco Itaú Crédito Auto");
-            banco.setEmail("banco@rentcars.com");
-            banco.setSenha(senhaPadrao);
-            banco.setRole("ROLE_BANCO");
-            banco.setEndereco("Av. Faria Lima, 3500 - São Paulo, SP");
-            banco.setCnpj("98765432000111");
-            agenteRepository.save(banco);
+        // Garante slots agendáveis para os próximos 14 dias respeitando o calendário operacional:
+        // Seg: Fechado (Manutenção FIA) | Ter-Qui: Operação Reduzida (2 turnos) | Sex-Dom: Full Grid (3 turnos + Noturno)
+        LocalDate hoje = LocalDate.now();
+        for (Circuito c : circuitosMap.values()) {
+            for (int d = 1; d <= 14; d++) {
+                LocalDate dataSlot = hoje.plusDays(d);
+                DayOfWeek dow = dataSlot.getDayOfWeek();
+                if (dow == DayOfWeek.MONDAY) {
+                    continue; // Manutenção de pista e calibração de cronometragem
+                }
+                boolean isFimDeSemana = (dow == DayOfWeek.FRIDAY || dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
+                if (isFimDeSemana) {
+                    criarSlotSeAusente(c, dataSlot, "MANHA", 12, d % 3 == 0 ? 4 : 2, BigDecimal.ZERO);
+                    criarSlotSeAusente(c, dataSlot, "TARDE", 14, d % 2 == 0 ? 6 : 3, new BigDecimal("250.00"));
+                    criarSlotSeAusente(c, dataSlot, "NOTURNO", 10, d % 4 == 0 ? 3 : 1, new BigDecimal("500.00"));
+                } else {
+                    // Terça a Quinta: menor procura -> menos vagas e sem sessão noturna
+                    criarSlotSeAusente(c, dataSlot, "MANHA", 5, d % 2 == 0 ? 1 : 0, BigDecimal.ZERO);
+                    criarSlotSeAusente(c, dataSlot, "TARDE", 6, d % 3 == 0 ? 2 : 1, new BigDecimal("250.00"));
+                }
+            }
+        }
 
-            // 3. Cliente Padrão
-            Cliente cliente = new Cliente();
-            cliente.setNome("Gabriel Silva");
-            cliente.setEmail("cliente@rentcars.com");
-            cliente.setSenha(senhaPadrao);
-            cliente.setRole("ROLE_CLIENTE");
-            cliente.setEndereco("Rua da Bahia, 1000 - Belo Horizonte, MG");
-            cliente.setCpf("11122233344");
-            cliente.setRg("MG12345678");
-            cliente.setProfissao("Engenheiro de Software");
+        // 2. Garante exclusivamente a conta administrativa Apex Race Control e expurga contas legadas
+        Usuario owner = ensureAgenteConta(
+                "admin@apex.com",
+                "Apex Race Control (Admin)",
+                "ROLE_ADMIN",
+                "Apex HQ - Race Control Center",
+                "99887766000122"
+        );
+        limparDadosLegados(owner);
 
-            List<Rendimento> rendimentos = new ArrayList<>();
-            Rendimento r1 = new Rendimento();
-            r1.setEmpregadora("Tech Solutions SA");
-            r1.setValor(new BigDecimal("12000.00"));
-            rendimentos.add(r1);
+        // 3. Cadastra os 8 Supercarros únicos, alocando cada um em 3 pistas (= 3 carros distintos por pista)
+        if (automovelRepository.count() == 0 && owner != null) {
+            registrarAutomovel("Porsche", "911 GT3 RS (992)", 2024, "POR-GT3RS-2024", "GT39E92",
+                    "3850.00", "/cars/porsche-studio.webp", 525, "3.2s", "296 km/h", "GT3",
+                    List.of("nurburgring", "le_mans", "monaco"), circuitosMap, owner);
 
-            Rendimento r2 = new Rendimento();
-            r2.setEmpregadora("PUC Minas - Projetos");
-            r2.setValor(new BigDecimal("4500.00"));
-            rendimentos.add(r2);
+            registrarAutomovel("BMW", "M4 Competition Track", 2024, "BMW-M4C-2024", "M4C8E20",
+                    "2750.00", "/cars/bmw-studio.webp", 510, "3.5s", "290 km/h", "GT4",
+                    List.of("spa", "nurburgring", "silverstone"), circuitosMap, owner);
 
-            cliente.setRendimentos(rendimentos);
-            clienteRepository.save(cliente);
+            registrarAutomovel("Mercedes-AMG", "GT Track Series", 2024, "AMG-GTR-2024", "AMG9E00",
+                    "3950.00", "/cars/amg-studio.webp", 734, "2.8s", "315 km/h", "GT2",
+                    List.of("monza", "nurburgring", "spa"), circuitosMap, owner);
 
-            // 4. Cadastra veículos de demonstração vinculados à empresa
-            Automovel carro1 = new Automovel();
-            carro1.setMarca("Porsche");
-            carro1.setModelo("911 Carrera S");
-            carro1.setAno(2024);
-            carro1.setMatricula("POR-911-2024");
-            carro1.setPlaca("PCH9E11");
-            carro1.setPrecoPorDia(new BigDecimal("950.00"));
-            carro1.setImageUrl("https://images.unsplash.com/photo-1614162692292-7ac56d7f7f1e?auto=format&fit=crop&q=80&w=1200");
-            carro1.setProprietario(empresa);
-            automovelRepository.save(carro1);
+            registrarAutomovel("Audi", "R8 V10 Performance", 2024, "AUD-R8V10-2024", "R8V1E00",
+                    "3400.00", "/cars/audi-studio.webp", 620, "3.1s", "331 km/h", "GT3",
+                    List.of("interlagos", "spa", "suzuka"), circuitosMap, owner);
 
-            Automovel carro2 = new Automovel();
-            carro2.setMarca("BMW");
-            carro2.setModelo("M4 Competition");
-            carro2.setAno(2024);
-            carro2.setMatricula("BMW-M4-2024");
-            carro2.setPlaca("BMW4M00");
-            carro2.setPrecoPorDia(new BigDecimal("780.00"));
-            carro2.setImageUrl("https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&q=80&w=1200");
-            carro2.setProprietario(empresa);
-            automovelRepository.save(carro2);
+            registrarAutomovel("Porsche", "718 Cayman GT4 RS", 2024, "POR-GT4RS-2024", "GT48E71",
+                    "3100.00", "/cars/cayman-studio.webp", 500, "3.4s", "315 km/h", "GT4",
+                    List.of("monaco", "silverstone", "interlagos"), circuitosMap, owner);
 
-            System.out.println("✅ Usuários iniciais (empresa@rentcars.com, banco@rentcars.com, cliente@rentcars.com) e frota criados com sucesso!");
+            registrarAutomovel("BMW", "M8 Competition Coupé", 2024, "BMW-M8C-2024", "M8C9E92",
+                    "3250.00", "/cars/m8-studio.webp", 625, "3.2s", "305 km/h", "GT3",
+                    List.of("le_mans", "monza", "interlagos"), circuitosMap, owner);
+
+            registrarAutomovel("Mercedes-AMG", "GT Black Series", 2024, "AMG-GTBS-2024", "AMGBS24",
+                    "4450.00", "/cars/amg-bs-studio.webp", 730, "3.2s", "325 km/h", "GT2",
+                    List.of("silverstone", "le_mans", "suzuka"), circuitosMap, owner);
+
+            registrarAutomovel("Audi", "RS e-tron GT Performance", 2025, "AUD-ETRON-2025", "ETR9E25",
+                    "3600.00", "/cars/etrongt-studio.webp", 925, "2.5s", "250 km/h", "ELECTRIC",
+                    List.of("suzuka", "monza", "monaco"), circuitosMap, owner);
+
+            log.info("Frota unificada Apex inicializada: 8 supercarros com 3 autódromos cada (3 opções por pista).");
+        } else {
+            // Garante sincronização dos 3 circuitos caso os carros já existam de carga anterior
+            sincronizarCircuitosExistentes(circuitosMap);
+        }
+
+        // 4. Task automática: garante que toda sessão agendada possua QR Code criptográfico FIA Pass
+        qrCodePassService.executarTaskGeracaoQrCodes();
+    }
+
+    private Usuario ensureAgenteConta(String email, String nome, String role, String endereco, String cnpj) {
+        return usuarioRepository.findByEmail(email).map(u -> {
+            if (u.getTelefone() == null || u.getTelefone().isBlank()) {
+                u.setTelefone("11999999999");
+                return usuarioRepository.update(u);
+            }
+            return u;
+        }).orElseGet(() -> {
+            Agente agente = new Agente();
+            agente.setNome(nome);
+            agente.setEmail(email);
+            agente.setSenha(BCrypt.hashpw("123456", BCrypt.gensalt()));
+            agente.setRole(role);
+            agente.setEndereco(endereco);
+            agente.setCnpj(cnpj);
+            agente.setTelefone("11999999999");
+            Usuario salvo = agenteRepository.save(agente);
+            log.info("Conta operacional inicializada: {} ({}).", email, role);
+            return salvo;
+        });
+    }
+
+    private void criarSlotSeAusente(Circuito c, LocalDate data, String turno, int total, int ocupadas, BigDecimal taxa) {
+        if (trackSlotRepository.findByCircuitoIdAndDataAndTurno(c.getId(), data, turno).isEmpty()) {
+            TrackSlot slot = new TrackSlot(c, data, turno, total);
+            slot.setVagasOcupadas(ocupadas);
+            slot.setTaxaAdicionalTurno(taxa);
+            trackSlotRepository.save(slot);
+        }
+    }
+
+    private void registrarAutomovel(String marca, String modelo, int ano, String matricula, String placa,
+                                    String precoPorDia, String imageUrl, int potenciaCv, String aceleracao0a100,
+                                    String velocidadeMaxima, String categoria, List<String> circuitoIds,
+                                    Map<String, Circuito> circuitosMap, Usuario proprietario) {
+        Automovel carro = new Automovel();
+        carro.setMarca(marca);
+        carro.setModelo(modelo);
+        carro.setAno(ano);
+        carro.setMatricula(matricula);
+        carro.setPlaca(placa);
+        carro.setPrecoPorDia(new BigDecimal(precoPorDia));
+        carro.setImageUrl(imageUrl);
+        carro.setPotenciaCv(potenciaCv);
+        carro.setAceleracao0a100(aceleracao0a100);
+        carro.setVelocidadeMaxima(velocidadeMaxima);
+        carro.setCategoria(categoria);
+        for (String cid : circuitoIds) {
+            carro.adicionarCircuito(circuitosMap.get(cid));
+        }
+        carro.setAtivoBox(true);
+        carro.setProprietario(proprietario);
+        automovelRepository.save(carro);
+    }
+
+    private void sincronizarCircuitosExistentes(Map<String, Circuito> circuitosMap) {
+        Map<String, List<String>> alocacaoPorMatricula = Map.of(
+                "POR-GT3RS-2024", List.of("nurburgring", "le_mans", "monaco"),
+                "BMW-M4C-2024", List.of("spa", "nurburgring", "silverstone"),
+                "AMG-GTR-2024", List.of("monza", "nurburgring", "spa"),
+                "AUD-R8V10-2024", List.of("interlagos", "spa", "suzuka"),
+                "POR-GT4RS-2024", List.of("monaco", "silverstone", "interlagos"),
+                "BMW-M8C-2024", List.of("le_mans", "monza", "interlagos"),
+                "AMG-GTBS-2024", List.of("silverstone", "le_mans", "suzuka"),
+                "AUD-ETRON-2025", List.of("suzuka", "monza", "monaco")
+        );
+        automovelRepository.findAll().forEach(carro -> {
+            List<String> ids = alocacaoPorMatricula.get(carro.getMatricula());
+            if (ids != null && (carro.getCircuitosDisponiveis() == null || carro.getCircuitosDisponiveis().size() < 3)) {
+                ids.forEach(cid -> carro.adicionarCircuito(circuitosMap.get(cid)));
+                automovelRepository.update(carro);
+            }
+        });
+    }
+
+    private void limparDadosLegados(Usuario adminOwner) {
+        List<String> emailsLegados = List.of("empresa@rentcars.com", "banco@rentcars.com");
+        Agente adminAgente = (adminOwner instanceof Agente) ? (Agente) adminOwner : null;
+
+        // Reatribui proprietário da frota para admin@apex.com
+        automovelRepository.findAll().forEach(carro -> {
+            if (carro.getProprietario() != null && carro.getProprietario().getEmail() != null
+                    && emailsLegados.stream().anyMatch(e -> e.equalsIgnoreCase(carro.getProprietario().getEmail()))) {
+                carro.setProprietario(adminOwner);
+                automovelRepository.update(carro);
+            }
+        });
+
+        // Normaliza status de pedidos legados e desvincula avaliadores antigos
+        pedidoRepository.findAll().forEach(pedido -> {
+            boolean alterado = false;
+            String st = pedido.getStatus();
+            if ("PENDENTE_EMPRESA".equalsIgnoreCase(st) || "PENDENTE_BANCO".equalsIgnoreCase(st) || "PENDENTE".equalsIgnoreCase(st)) {
+                pedido.setStatus("AGUARDANDO_APROVACAO");
+                alterado = true;
+            }
+            if (pedido.getAgenteAvaliador() != null && pedido.getAgenteAvaliador().getEmail() != null
+                    && emailsLegados.stream().anyMatch(e -> e.equalsIgnoreCase(pedido.getAgenteAvaliador().getEmail()))) {
+                pedido.setAgenteAvaliador(adminAgente);
+                alterado = true;
+            }
+            if (alterado) {
+                pedidoRepository.update(pedido);
+            }
+        });
+
+        // Remove contas legadas (empresa@rentcars.com e banco@rentcars.com)
+        for (String legacyEmail : emailsLegados) {
+            usuarioRepository.findByEmail(legacyEmail).ifPresent(legacyUser -> {
+                transacaoRepository.findByUsuarioIdOrderByDataHoraDesc(legacyUser.getId())
+                        .forEach(transacaoRepository::delete);
+                usuarioRepository.delete(legacyUser);
+                log.info("Conta legada expurgada do banco: {}", legacyEmail);
+            });
         }
     }
 }

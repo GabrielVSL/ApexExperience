@@ -1,36 +1,63 @@
 package com.aluguel.facades;
 
 import com.aluguel.models.Automovel;
+import com.aluguel.models.Circuito;
 import com.aluguel.models.Usuario;
 import com.aluguel.repositories.AutomovelRepository;
+import com.aluguel.repositories.CircuitoRepository;
 import com.aluguel.repositories.UsuarioRepository;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Singleton
 public class AutomovelFacade {
 
+    private static final List<String> CIRCUITOS_PADRAO = List.of("nurburgring", "spa", "interlagos");
+
     private final AutomovelRepository automovelRepository;
     private final UsuarioRepository usuarioRepository;
+    private final CircuitoRepository circuitoRepository;
 
-    public AutomovelFacade(AutomovelRepository automovelRepository, UsuarioRepository usuarioRepository) {
+    @Inject
+    public AutomovelFacade(AutomovelRepository automovelRepository,
+                           UsuarioRepository usuarioRepository,
+                           CircuitoRepository circuitoRepository) {
         this.automovelRepository = automovelRepository;
         this.usuarioRepository = usuarioRepository;
+        this.circuitoRepository = circuitoRepository;
+    }
+
+    public AutomovelFacade(AutomovelRepository automovelRepository, UsuarioRepository usuarioRepository) {
+        this(automovelRepository, usuarioRepository, null);
     }
 
     public List<Automovel> listarTodos() {
-        return (List<Automovel>) automovelRepository.findAll();
+        return java.util.stream.StreamSupport.stream(automovelRepository.findAll().spliterator(), false)
+                .toList();
+    }
+
+    public Automovel buscarPorId(Long id) {
+        return automovelRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Automóvel não encontrado."));
     }
 
     public List<Automovel> listarPorProprietario(String emailProprietario) {
+        Usuario usuario = usuarioRepository.findByEmail(emailProprietario).orElse(null);
+        if (usuario != null && "ROLE_ADMIN".equals(usuario.getRole())) {
+            return listarTodos();
+        }
         return automovelRepository.findByProprietarioEmail(emailProprietario);
     }
 
     public Automovel criar(Automovel automovel, String emailProprietario) {
         Usuario proprietario = usuarioRepository.findByEmail(emailProprietario)
                 .orElseThrow(() -> new IllegalArgumentException("Proprietário não encontrado"));
-        
+
         automovel.setProprietario(proprietario);
+        sincronizarCircuitosDoVeiculo(automovel, automovel, true);
         return automovelRepository.save(automovel);
     }
 
@@ -38,7 +65,11 @@ public class AutomovelFacade {
         Automovel carro = automovelRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Carro não encontrado"));
 
-        if (!carro.getProprietario().getEmail().equals(emailLogado)) {
+        boolean isAdmin = usuarioRepository.findByEmail(emailLogado)
+                .map(u -> "ROLE_ADMIN".equals(u.getRole()))
+                .orElse(false);
+
+        if (!isAdmin && !carro.getProprietario().getEmail().equals(emailLogado)) {
             throw new IllegalArgumentException("Você não tem permissão para editar este veículo.");
         }
 
@@ -49,15 +80,56 @@ public class AutomovelFacade {
         carro.setMatricula(dadosNovos.getMatricula());
         carro.setImageUrl(dadosNovos.getImageUrl());
         carro.setPrecoPorDia(dadosNovos.getPrecoPorDia());
+        carro.setAtivoBox(dadosNovos.isAtivoBox());
+        if (dadosNovos.getPotenciaCv() != null) carro.setPotenciaCv(dadosNovos.getPotenciaCv());
+        if (dadosNovos.getAceleracao0a100() != null) carro.setAceleracao0a100(dadosNovos.getAceleracao0a100());
+        if (dadosNovos.getVelocidadeMaxima() != null) carro.setVelocidadeMaxima(dadosNovos.getVelocidadeMaxima());
+        if (dadosNovos.getCategoria() != null) carro.setCategoria(dadosNovos.getCategoria());
+
+        boolean informouCircuitos = (dadosNovos.getCircuitosDisponiveis() != null && !dadosNovos.getCircuitosDisponiveis().isEmpty())
+                || (dadosNovos.getCircuito() != null && dadosNovos.getCircuito().getId() != null);
+        if (informouCircuitos) {
+            sincronizarCircuitosDoVeiculo(carro, dadosNovos, false);
+        }
 
         return automovelRepository.update(carro);
+    }
+
+    private void sincronizarCircuitosDoVeiculo(Automovel destino, Automovel origem, boolean aplicarPadraoSeVazio) {
+        if (circuitoRepository == null) {
+            return;
+        }
+        Set<Circuito> resolvidos = new LinkedHashSet<>();
+        if (origem.getCircuitosDisponiveis() != null) {
+            for (Circuito ref : origem.getCircuitosDisponiveis()) {
+                if (ref != null && ref.getId() != null && !ref.getId().isBlank()) {
+                    circuitoRepository.findById(ref.getId()).ifPresent(resolvidos::add);
+                }
+            }
+        }
+        if (resolvidos.isEmpty() && origem.getCircuito() != null && origem.getCircuito().getId() != null) {
+            circuitoRepository.findById(origem.getCircuito().getId()).ifPresent(resolvidos::add);
+        }
+        if (resolvidos.isEmpty() && aplicarPadraoSeVazio) {
+            for (String cid : CIRCUITOS_PADRAO) {
+                circuitoRepository.findById(cid).ifPresent(resolvidos::add);
+            }
+        }
+        if (!resolvidos.isEmpty()) {
+            destino.setCircuitosDisponiveis(resolvidos);
+            destino.setCircuito(resolvidos.iterator().next());
+        }
     }
 
     public void deletar(Long id, String emailLogado) {
         Automovel carro = automovelRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Carro não encontrado"));
 
-        if (!carro.getProprietario().getEmail().equals(emailLogado)) {
+        boolean isAdmin = usuarioRepository.findByEmail(emailLogado)
+                .map(u -> "ROLE_ADMIN".equals(u.getRole()))
+                .orElse(false);
+
+        if (!isAdmin && !carro.getProprietario().getEmail().equals(emailLogado)) {
             throw new IllegalArgumentException("Você não tem permissão para excluir este veículo.");
         }
 

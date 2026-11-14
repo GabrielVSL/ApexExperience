@@ -1,0 +1,224 @@
+package com.aluguel.facades;
+
+import com.aluguel.models.TransacaoApexPay;
+import com.aluguel.models.Usuario;
+import com.aluguel.repositories.TransacaoApexPayRepository;
+import com.aluguel.repositories.UsuarioRepository;
+import jakarta.inject.Singleton;
+import jakarta.transaction.Transactional;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Singleton
+public class ApexPayFacade {
+
+    private final UsuarioRepository usuarioRepository;
+    private final TransacaoApexPayRepository transacaoRepository;
+    private final com.aluguel.services.WhatsAppService whatsAppService;
+
+    @jakarta.inject.Inject
+    public ApexPayFacade(UsuarioRepository usuarioRepository,
+                         TransacaoApexPayRepository transacaoRepository,
+                         @io.micronaut.core.annotation.Nullable com.aluguel.services.WhatsAppService whatsAppService) {
+        this.usuarioRepository = usuarioRepository;
+        this.transacaoRepository = transacaoRepository;
+        this.whatsAppService = whatsAppService;
+    }
+
+    public ApexPayFacade(UsuarioRepository usuarioRepository,
+                         TransacaoApexPayRepository transacaoRepository) {
+        this(usuarioRepository, transacaoRepository, null);
+    }
+
+    @Transactional
+    public TransacaoApexPay depositar(String email, BigDecimal valor, String descricao) {
+        if (valor == null || valor.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("O valor do depósito deve ser maior que zero.");
+        }
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+
+        usuario.creditarSaldo(valor);
+        usuarioRepository.update(usuario);
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "DEPOSITO",
+                valor,
+                (descricao != null && !descricao.isBlank()) ? descricao : "Depósito em Conta ApexPay",
+                null
+        );
+        TransacaoApexPay salva = transacaoRepository.save(transacao);
+
+        // Notificação de crédito na carteira via WhatsApp
+        if (whatsAppService != null && usuario.getTelefone() != null && !usuario.getTelefone().isBlank()) {
+            whatsAppService.enviarConfirmacaoDepositoAsync(usuario.getTelefone(), usuario.getNome(), valor, usuario.getSaldoCarteira());
+        }
+
+        return salva;
+    }
+
+    @Transactional
+    public TransacaoApexPay debitarReserva(String email, BigDecimal valorOriginal, String trackingCode, String descricao) {
+        if (valorOriginal == null || valorOriginal.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Valor da reserva inválido para débito.");
+        }
+
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+
+        // Regra de Ouro: Inadimplente não pode agendar nada novo até quitar
+        if (usuario.isInadimplente()) {
+            throw new IllegalStateException("Conta ApexPay inadimplente (" + usuario.getSaldoCarteira() + " BRL). Regularize o saldo pendente antes de realizar novos agendamentos.");
+        }
+
+        // Gateway ApexPay cobra o valor integral da sessão (sem tiers artificiais de desconto)
+        BigDecimal valorFinal = valorOriginal.setScale(2, RoundingMode.HALF_UP);
+
+        // Debita da carteira
+        usuario.debitarSaldo(valorFinal);
+        usuarioRepository.update(usuario);
+
+        String desc = (descricao != null && !descricao.isBlank())
+                ? descricao
+                : String.format("Pagamento de Sessão [%s] via Saldo ApexPay", trackingCode);
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "DEBITO_RESERVA",
+                valorFinal,
+                desc,
+                trackingCode
+        );
+        return transacaoRepository.save(transacao);
+    }
+
+    @Transactional
+    public TransacaoApexPay aplicarJurosInadimplencia(String email) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+
+        if (usuario.getSaldoCarteira() == null || usuario.getSaldoCarteira().compareTo(BigDecimal.ZERO) >= 0) {
+            throw new IllegalStateException("Usuário não possui débitos vencidos. Saldo atual: " + usuario.getSaldoCarteira());
+        }
+
+        // Juros diários de 0.1% ao dia sobre o saldo devedor absoluto
+        BigDecimal saldoDevedor = usuario.getSaldoCarteira().abs();
+        BigDecimal valorJuros = saldoDevedor.multiply(new BigDecimal("0.001")).setScale(2, RoundingMode.HALF_UP);
+        if (valorJuros.compareTo(new BigDecimal("0.01")) < 0) {
+            valorJuros = new BigDecimal("0.01"); // Mínimo de 1 centavo
+        }
+
+        // Subtrai do saldo da carteira (aumenta o saldo negativo)
+        usuario.setSaldoCarteira(usuario.getSaldoCarteira().subtract(valorJuros));
+        usuario.setStatusFinanceiro("INADIMPLENTE");
+        usuarioRepository.update(usuario);
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "JUROS_ATRASO",
+                valorJuros,
+                String.format("Aplicação de Juros Diários ApexPay (0.1%% sobre saldo devedor R$ %s)", saldoDevedor),
+                null
+        );
+        return transacaoRepository.save(transacao);
+    }
+
+    /**
+     * Registra cobrança de sinistro / franquia por avaria em pista diretamente na carteira do piloto.
+     */
+    @Transactional
+    public TransacaoApexPay lancarCobrancaSinistro(String email, BigDecimal valor, String trackingCode, String motivo) {
+        if (valor == null || valor.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("O valor da franquia de sinistro deve ser maior que zero.");
+        }
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+
+        usuario.debitarSaldo(valor);
+        usuarioRepository.update(usuario);
+
+        String desc = (motivo != null && !motivo.isBlank())
+                ? "Franquia / Sinistro Pista: " + motivo
+                : "Cobrança de Franquia de Pista [" + trackingCode + "]";
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "SINISTRO_PISTA",
+                valor,
+                desc,
+                trackingCode
+        );
+        return transacaoRepository.save(transacao);
+    }
+
+    @Transactional
+    public TransacaoApexPay debitarValorLiquido(Usuario usuario, BigDecimal valorLiquido, String trackingCode, String descricao) {
+        usuario.debitarSaldo(valorLiquido);
+        usuarioRepository.update(usuario);
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "DEBITO_RESERVA",
+                valorLiquido,
+                descricao,
+                trackingCode
+        );
+        return transacaoRepository.save(transacao);
+    }
+
+    @Transactional
+    public TransacaoApexPay estornarReserva(Usuario usuario, BigDecimal valorLiquido, String trackingCode, String motivo) {
+        if (valorLiquido == null || valorLiquido.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+
+        BigDecimal saldoAtual = usuario.getSaldoCarteira() != null ? usuario.getSaldoCarteira() : BigDecimal.ZERO;
+        usuario.setSaldoCarteira(saldoAtual.add(valorLiquido));
+
+        if (usuario.getSaldoCarteira().compareTo(BigDecimal.ZERO) >= 0) {
+            usuario.setStatusFinanceiro("REGULAR");
+        }
+        usuarioRepository.update(usuario);
+
+        String desc = (motivo != null && !motivo.isBlank())
+                ? motivo
+                : "Estorno de Sessão Cancelada / Rejeitada [" + trackingCode + "]";
+
+        TransacaoApexPay transacao = new TransacaoApexPay(
+                usuario,
+                "ESTORNO",
+                valorLiquido,
+                desc,
+                trackingCode
+        );
+        return transacaoRepository.save(transacao);
+    }
+
+    public Map<String, Object> getResumoCarteira(String email) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+
+        Map<String, Object> resumo = new HashMap<>();
+        resumo.put("usuarioId", usuario.getId());
+        resumo.put("nome", usuario.getNome());
+        resumo.put("email", usuario.getEmail());
+        resumo.put("saldoCarteira", usuario.getSaldoCarteira() != null ? usuario.getSaldoCarteira() : BigDecimal.ZERO);
+        resumo.put("totalDepositadoHistorico", usuario.getTotalDepositadoHistorico() != null ? usuario.getTotalDepositadoHistorico() : BigDecimal.ZERO);
+        resumo.put("statusFinanceiro", usuario.getStatusFinanceiro() != null ? usuario.getStatusFinanceiro() : "REGULAR");
+        resumo.put("inadimplente", usuario.isInadimplente());
+        resumo.put("tierFidelidade", usuario.getTierFidelidade());
+        resumo.put("porcentagemDesconto", 0);
+        return resumo;
+    }
+
+    public List<TransacaoApexPay> getExtrato(String email) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado: " + email));
+        return transacaoRepository.findByUsuarioIdOrderByDataHoraDesc(usuario.getId());
+    }
+}

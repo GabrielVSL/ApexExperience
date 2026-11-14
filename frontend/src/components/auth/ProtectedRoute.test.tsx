@@ -1,0 +1,77 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import ProtectedRoute from './ProtectedRoute';
+import { useAuthStore } from '@/store/useAuthStore';
+
+describe('ProtectedRoute Component', () => {
+  beforeEach(() => {
+    useAuthStore.getState().logout();
+  });
+
+  it('deve redirecionar para /login quando usuário não estiver autenticado', () => {
+    render(
+      <MemoryRouter initialEntries={['/privado']}>
+        <Routes>
+          <Route path="/login" element={<div>Página de Login</div>} />
+          <Route
+            path="/privado"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <div>Área Exclusiva Race Control</div>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Página de Login')).toBeDefined();
+    expect(screen.queryByText('Área Exclusiva Race Control')).toBeNull();
+  });
+
+  it('deve redirecionar quando usuário tiver role diferente da permitida', () => {
+    useAuthStore.getState().login('jwt-falso', 'cliente@rentcars.com', 'CLIENTE');
+
+    render(
+      <MemoryRouter initialEntries={['/frota']}>
+        <Routes>
+          <Route path="/" element={<div>Página Inicial Home</div>} />
+          <Route
+            path="/frota"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <div>Painel da Frota</div>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Página Inicial Home')).toBeDefined();
+    expect(screen.queryByText('Painel da Frota')).toBeNull();
+  });
+
+  it('deve permitir acesso quando usuário tem a role autorizada', () => {
+    useAuthStore.getState().login('jwt-valido', 'admin@apex.com', 'ADMIN');
+
+    render(
+      <MemoryRouter initialEntries={['/frota']}>
+        <Routes>
+          <Route path="/" element={<div>Página Inicial Home</div>} />
+          <Route
+            path="/frota"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <div>Painel da Frota Exclusivo</div>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Painel da Frota Exclusivo')).toBeDefined();
+  });
+});
