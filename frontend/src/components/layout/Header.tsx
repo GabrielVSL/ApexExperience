@@ -224,7 +224,6 @@ export default function Header({ transparent = false }: HeaderProps) {
         <Link to="/" className={itemCls('/')}>Início</Link>
         <Link to="/pistas" className={itemCls('/pistas')}>Pistas</Link>
         <Link to="/cars" className={itemCls('/cars')}>Frota</Link>
-        <a href="/#como-funciona" className={baseCls}>Como Funciona</a>
       </>
     );
   };

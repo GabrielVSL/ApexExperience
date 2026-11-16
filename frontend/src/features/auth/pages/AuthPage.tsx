@@ -318,6 +318,19 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
           2. PALCO CENTRAL (ALTURA ESTÁVEL — FROSTED GLASS TRANSLÚCIDO)
          ======================================================== */}
       <div className="relative z-10 w-full max-w-5xl h-[670px] min-h-[640px] max-h-[92vh] rounded-[30px] sm:rounded-[36px] overflow-hidden border border-white/10 shadow-[0_40px_120px_rgba(0,0,0,0.95)] flex flex-col justify-between bg-[#08090C]/60 backdrop-blur-xl">
+        {/* Vídeo noturno dentro do palco central */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <video
+            src="/login.mp4"
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover filter brightness-[0.82] contrast-[1.15] scale-[1.01]"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#08090C]/60 via-[#08090C]/25 to-[#08090C]/70" />
+        </div>
+
         {/* Barra superior dentro da moldura: Logo à esquerda + Botão minimalista de voltar com seta */}
         <header className="relative z-20 flex items-center justify-between px-6 sm:px-9 pt-6 sm:pt-7">
           <Link to="/" className="inline-flex items-center gap-2.5 group">

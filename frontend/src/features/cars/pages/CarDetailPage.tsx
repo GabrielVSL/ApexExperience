@@ -3,25 +3,74 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronDown, ChevronUp, Loader2, ArrowLeft } from 'lucide-react';
+import {
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  ArrowLeft,
+  ArrowUpRight,
+  Flame,
+  Gauge,
+  Zap,
+  MapPin,
+} from 'lucide-react';
 import { api } from '@/services/api';
 import { BookingModal, Automovel } from '../components/BookingModal';
 import { CarBlueprintSvg } from '../components/CarBlueprintSvg';
+import { CountryFlag } from '@/components/ui/CountryFlag';
 import { useCurrencyStore } from '@/store/useCurrencyStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import {
   getCarDetailSheet,
   getCarDisplaySpecs,
-  resolveEditorialCarImage,
   resolveSideCarImage,
   resolveStudioCarImage,
 } from '@/lib/carPresentation';
+
+const CIRCUIT_COUNTRY_CODES: Record<string, string> = {
+  nurburgring: 'DE',
+  spa: 'BE',
+  monza: 'IT',
+  monaco: 'MC',
+  le_mans: 'FR',
+  silverstone: 'GB',
+  interlagos: 'BR',
+  suzuka: 'JP',
+};
+
+function resolveCountryCode(circuitId?: string, circuitName?: string): string {
+  if (circuitId && CIRCUIT_COUNTRY_CODES[circuitId]) {
+    return CIRCUIT_COUNTRY_CODES[circuitId];
+  }
+  const lower = (circuitName || '').toLowerCase();
+  if (lower.includes('interlagos')) return 'BR';
+  if (lower.includes('spa')) return 'BE';
+  if (lower.includes('monza')) return 'IT';
+  if (lower.includes('monaco') || lower.includes('mônaco')) return 'MC';
+  if (lower.includes('mans')) return 'FR';
+  if (lower.includes('silverstone')) return 'GB';
+  if (lower.includes('suzuka')) return 'JP';
+  return 'DE';
+}
+
+function formatCircuitLabel(name: string): string {
+  return name
+    .replace('Circuit de la Sarthe ', '')
+    .replace('Circuit de ', '')
+    .replace('Autodromo Nazionale ', '')
+    .replace('Autódromo de ', '')
+    .replace(' International Racing Course', '')
+    .replace(' Nordschleife', '')
+    .replace(' Circuit', '')
+    .replace(/[()]/g, '')
+    .trim();
+}
 
 interface HeroAngleOption {
   id: string;
   label: string;
   src: string;
-  isBannerCrop?: boolean;
 }
 
 export default function CarDetailPage() {
@@ -57,7 +106,6 @@ export default function CarDetailPage() {
         const res = await api.get(`/api/automoveis/${id}`);
         setCar(res.data);
       } catch {
-        // Fallback caso o servidor esteja com versão anterior sem GET /{id}
         try {
           const allRes = await api.get('/api/automoveis');
           const list = Array.isArray(allRes.data) ? (allRes.data as Automovel[]) : [];
@@ -75,20 +123,17 @@ export default function CarDetailPage() {
     fetchCar();
   }, [id]);
 
+  // Apenas imagens recortadas em estúdio sem fundo (.webp) na mesma proporção
   const heroAngles = useMemo<HeroAngleOption[]>(() => {
     if (!car) return [];
     const studioSrc = resolveStudioCarImage(car);
     const sideSrc = resolveSideCarImage(car);
-    const editorial = resolveEditorialCarImage(car);
 
     const options: HeroAngleOption[] = [];
     if (sideSrc) {
       options.push({ id: 'side', label: 'Perfil Lateral', src: sideSrc });
     }
     options.push({ id: 'studio', label: 'Estúdio 3/4', src: studioSrc });
-    if (editorial.isDedicatedRear) {
-      options.push({ id: 'rear', label: 'Traseira Pista', src: editorial.src, isBannerCrop: true });
-    }
     return options;
   }, [car]);
 
@@ -97,9 +142,7 @@ export default function CarDetailPage() {
       <div className="min-h-screen flex items-center justify-center bg-[#08090C]">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="animate-spin text-[#FF1717]" size={34} />
-          <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/50">
-            Carregando especificações...
-          </span>
+          <span className="text-xs text-white/50">Carregando especificações...</span>
         </div>
       </div>
     );
@@ -108,7 +151,7 @@ export default function CarDetailPage() {
   if (notFound || !car) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#08090C] text-white px-6 text-center">
-        <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[#FF1717] mb-3">
+        <p className="text-xs font-medium text-[#FF1717] mb-3">
           404 · Veículo não localizado
         </p>
         <h1 className="text-3xl font-medium tracking-tight mb-3">
@@ -130,22 +173,36 @@ export default function CarDetailPage() {
 
   const displaySpecs = getCarDisplaySpecs(car);
   const detailSheet = getCarDetailSheet(car);
-  const studioImage = resolveStudioCarImage(car);
-  const editorial = resolveEditorialCarImage(car);
   const activeAngle = heroAngles[activeAngleIdx] ?? heroAngles[0];
+  const circuitsList =
+    car.circuitosDisponiveis && car.circuitosDisponiveis.length > 0
+      ? car.circuitosDisponiveis.map((c) => ({
+          id: c.id,
+          label: formatCircuitLabel(c.nome),
+          countryCode: resolveCountryCode(c.id, c.nome),
+        }))
+      : [
+          {
+            id: displaySpecs.circuit.toLowerCase(),
+            label: formatCircuitLabel(displaySpecs.circuit),
+            countryCode: resolveCountryCode(undefined, displaySpecs.circuit),
+          },
+        ];
 
   return (
-    <div className="min-h-screen bg-[#08090C] text-white pt-24 pb-24 selection:bg-[#FF1717] selection:text-white font-sans">
+    <div className="min-h-screen bg-[#08090C] text-white pt-24 pb-20 selection:bg-[#FF1717] selection:text-white font-sans">
       {/* =====================================================================
-          1. BREADCRUMB + TÍTULO DISPLAY MONUMENTAL + PALCO HERO DO CARRO
+          1. BREADCRUMB + TÍTULO MONUMENTAL + PALCO DO CARRO + TELEMETRIA E CTA
          ===================================================================== */}
-      <section className="relative overflow-hidden pb-16 sm:pb-24">
-        {/* Halo de iluminação de estúdio */}
+      <section className="relative overflow-hidden pb-14 sm:pb-20">
         <div className="absolute top-36 left-1/2 -translate-x-1/2 w-[900px] h-[440px] bg-[radial-gradient(ellipse,rgba(255,255,255,0.06)_0%,transparent_68%)] pointer-events-none" />
 
         <div className="container mx-auto max-w-6xl px-6 relative z-10">
           {/* Breadcrumb */}
-          <nav className="flex items-center gap-1.5 text-xs text-white/45 mb-8 sm:mb-10" aria-label="Navegação estrutural">
+          <nav
+            className="flex items-center gap-1.5 text-xs text-white/45 mb-8 sm:mb-10"
+            aria-label="Navegação estrutural"
+          >
             <Link to="/cars" className="hover:text-white transition-colors">
               Frota
             </Link>
@@ -167,7 +224,6 @@ export default function CarDetailPage() {
 
           {/* Palco Principal do Veículo + Dots de Vista à Direita */}
           <div className="relative flex items-center justify-center my-2 sm:my-4">
-            {/* Sombra realista de chão */}
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[72%] max-w-2xl h-10 rounded-full bg-black/90 blur-xl pointer-events-none" />
 
             <div className="w-full max-w-4xl h-56 sm:h-80 md:h-96 flex items-center justify-center relative">
@@ -181,17 +237,12 @@ export default function CarDetailPage() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.98 }}
                     transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                    className={`w-full h-full drop-shadow-[0_24px_38px_rgba(0,0,0,0.9)] ${
-                      activeAngle.isBannerCrop
-                        ? 'object-cover rounded-2xl max-w-3xl opacity-90'
-                        : 'object-contain'
-                    }`}
+                    className="w-full h-full object-contain drop-shadow-[0_24px_38px_rgba(0,0,0,0.9)]"
                   />
                 )}
               </AnimatePresence>
             </div>
 
-            {/* Pontos laterais à direita (seletor real de vistas do estúdio) */}
             {heroAngles.length > 1 && (
               <div
                 className="hidden sm:flex flex-col items-center gap-3 absolute right-0 top-1/2 -translate-y-1/2 z-20"
@@ -226,10 +277,10 @@ export default function CarDetailPage() {
                   key={angle.id}
                   type="button"
                   onClick={() => setActiveAngleIdx(idx)}
-                  className={`px-3 py-1 rounded-full text-[11px] border transition-colors ${
+                  className={`px-3 py-1 rounded-full text-[11px] transition-colors ${
                     idx === activeAngleIdx
-                      ? 'border-[#FF1717] text-white bg-[#FF1717]/15'
-                      : 'border-white/10 text-white/50'
+                      ? 'bg-[#FF1717] text-white'
+                      : 'bg-white/[0.06] text-white/60'
                   }`}
                 >
                   {angle.label}
@@ -238,87 +289,124 @@ export default function CarDetailPage() {
             </div>
           )}
 
-          {/* 3 Métricas Centrais Abaixo do Veículo (exatamente como a print) */}
-          <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto text-center pt-6 sm:pt-8">
-            <div>
-              <p className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-                {displaySpecs.accel}
-              </p>
-              <p className="text-[11px] sm:text-xs text-white/50 mt-1">
-                Aceleração de 0 a 100 km/h
-              </p>
+          {/* Barra de Telemetria + Preço e Reserva Imediata na Primeira Tela */}
+          <div className="mt-8 sm:mt-10 rounded-3xl bg-[#0D1017] p-5 sm:px-8 sm:py-6 max-w-4xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-6">
+            <div className="grid grid-cols-3 gap-6 sm:gap-10 w-full lg:w-auto text-center sm:text-left">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-lg sm:text-2xl font-medium tracking-tight text-white tabular-nums">
+                  <Zap size={16} className="text-amber-300 hidden sm:inline" />
+                  <span>{displaySpecs.accel}</span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-white/45 mt-1">
+                  0 a 100 km/h
+                </p>
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-lg sm:text-2xl font-medium tracking-tight text-white tabular-nums">
+                  <Gauge size={16} className="text-[#FF1717] hidden sm:inline" />
+                  <span>{displaySpecs.power}</span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-white/45 mt-1">
+                  Potência homologada
+                </p>
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-lg sm:text-2xl font-medium tracking-tight text-white tabular-nums">
+                  <Flame size={16} className="text-emerald-300 hidden sm:inline" />
+                  <span>{displaySpecs.topSpeed}</span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-white/45 mt-1">
+                  Velocidade máxima
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-                {displaySpecs.power}
-              </p>
-              <p className="text-[11px] sm:text-xs text-white/50 mt-1">
-                Potência máxima homologada
-              </p>
-            </div>
-            <div>
-              <p className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-                {displaySpecs.topSpeed}
-              </p>
-              <p className="text-[11px] sm:text-xs text-white/50 mt-1">
-                Velocidade máxima em circuito
-              </p>
+
+            <div className="flex flex-wrap items-center justify-center sm:justify-between lg:justify-end gap-5 w-full lg:w-auto pt-4 lg:pt-0 border-t lg:border-t-0 border-white/[0.06]">
+              <div className="text-left">
+                <span className="block text-[11px] text-white/45">A partir de</span>
+                <span className="text-xl sm:text-2xl font-semibold text-white tabular-nums">
+                  {formatPrice(car.precoPorDia)}
+                  <span className="text-xs font-normal text-white/45 ml-1">/sessão</span>
+                </span>
+              </div>
+
+              {isStaff ? (
+                <Link
+                  to={staffTarget}
+                  className="inline-flex items-center gap-2 bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs sm:text-sm font-medium px-6 py-3 rounded-full transition-colors"
+                >
+                  <span>Gerenciar nos boxes</span>
+                  <ArrowUpRight size={15} />
+                </Link>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingOpen(true)}
+                    className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs sm:text-sm font-medium px-6 py-3 rounded-full transition-colors cursor-pointer"
+                  >
+                    Reservar sessão
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingOpen(true)}
+                    aria-label="Reservar sessão"
+                    className="w-10 h-10 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
+                  >
+                    <ArrowUpRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
       {/* =====================================================================
-          2. SEÇÃO EDITORIAL ("Design & Engenharia" — Foto Dark à Esquerda + Texto à Direita)
+          2. CARACTERÍSTICAS TÉCNICAS + BLUEPRINT CAD + RODAPÉ DE AÇÃO
          ===================================================================== */}
-      <section className="py-16 sm:py-24 px-6 border-t border-white/[0.06]">
-        <div className="container mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-12 items-center">
-          <div className="md:col-span-6 relative">
-            <div className="relative aspect-[16/10] w-full rounded-2xl overflow-hidden bg-[#050608] border border-white/[0.06] flex items-center justify-center">
-              {/* Vinheta radial e brilho vermelho sutil de pista */}
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_60%,rgba(255,23,23,0.08)_0%,rgba(8,9,12,0.92)_78%)] z-10 pointer-events-none" />
-              <img
-                src={editorial.src}
-                alt={`${car.marca} ${car.modelo} detalhe de design`}
-                className={
-                  editorial.isDedicatedRear
-                    ? 'w-full h-full object-cover opacity-90'
-                    : 'w-full h-full object-contain scale-[1.28] translate-x-6 brightness-90 contrast-115 drop-shadow-[0_18px_28px_rgba(0,0,0,0.9)]'
-                }
-                loading="lazy"
-              />
-            </div>
-          </div>
-
-          <div className="md:col-span-6 space-y-3.5">
-            <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-white/45">
-              {car.marca} · {displaySpecs.circuit}
-            </p>
-            <h2 className="text-2xl sm:text-4xl font-medium tracking-tight text-white">
-              {detailSheet.designTitle}
-            </h2>
-            <p className="text-sm sm:text-base text-white/65 font-normal leading-relaxed">
-              {detailSheet.designDescription}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* =====================================================================
-          3. CARACTERÍSTICAS TÉCNICAS COM BLUEPRINT VETORIAL NO CENTRO
-         ===================================================================== */}
-      <section className="py-16 sm:py-24 px-6 border-t border-white/[0.06]">
+      <section className="py-10 sm:py-16 px-6">
         <div className="container mx-auto max-w-5xl">
-          <h2 className="text-2xl sm:text-4xl font-medium tracking-tight text-white mb-14 sm:mb-16">
-            Características
-          </h2>
+          {/* Cabeçalho da Seção + Circuitos Homologados com Bandeira */}
+          <div className="space-y-5 mb-12 sm:mb-14">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div>
+                <h2 className="text-2xl sm:text-4xl font-medium tracking-tight text-white">
+                  Características
+                </h2>
+                <p className="text-xs sm:text-sm text-white/55 mt-2 max-w-2xl leading-relaxed">
+                  {detailSheet.designDescription}
+                </p>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-10 items-center">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="text-xs text-white/45 inline-flex items-center gap-1.5 mr-1 shrink-0">
+                <MapPin size={13} className="text-[#FF1717]" />
+                <span>Pistas homologadas:</span>
+              </span>
+              {circuitsList.map((circuit) => (
+                <Link
+                  key={circuit.id}
+                  to="/pistas"
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0D1017] hover:bg-white/[0.08] text-xs font-medium text-white/85 hover:text-white transition-colors whitespace-nowrap shrink-0"
+                >
+                  <CountryFlag
+                    countryCode={circuit.countryCode}
+                    className="w-4 h-3 rounded-[2px] shrink-0"
+                  />
+                  <span>{circuit.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-10 items-center">
             {/* Coluna Esquerda: 5 Especificações */}
             <div className="md:col-span-4 space-y-6 text-center">
               {detailSheet.leftSpecs.map((spec) => (
                 <div key={spec.label}>
-                  <p className="text-[11px] text-white/45 mb-1">{spec.label}</p>
+                  <p className="text-xs text-white/45 mb-1">{spec.label}</p>
                   <p className="text-base sm:text-lg font-medium text-white tracking-tight">
                     {spec.value}
                   </p>
@@ -326,13 +414,13 @@ export default function CarDetailPage() {
               ))}
             </div>
 
-            {/* Centro: Wireframe Blueprint Top-Down SVG */}
+            {/* Centro: Blueprint Técnico CAD em Vista Superior */}
             <div className="md:col-span-4 flex items-center justify-center py-4">
               <div className="relative flex items-center justify-center">
-                <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,255,255,0.06)_0%,transparent_70%)] pointer-events-none" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle,rgba(255,23,23,0.08)_0%,rgba(255,255,255,0.04)_40%,transparent_72%)] pointer-events-none" />
                 <CarBlueprintSvg
                   architecture={detailSheet.blueprint}
-                  className="w-40 sm:w-48 h-auto text-white/80"
+                  className="w-52 sm:w-64 h-auto"
                 />
               </div>
             </div>
@@ -341,7 +429,7 @@ export default function CarDetailPage() {
             <div className="md:col-span-4 space-y-6 text-center">
               {detailSheet.rightSpecs.map((spec) => (
                 <div key={spec.label}>
-                  <p className="text-[11px] text-white/45 mb-1">{spec.label}</p>
+                  <p className="text-xs text-white/45 mb-1">{spec.label}</p>
                   <p className="text-base sm:text-lg font-medium text-white tracking-tight">
                     {spec.value}
                   </p>
@@ -350,14 +438,13 @@ export default function CarDetailPage() {
             </div>
           </div>
 
-          {/* Divisor e Toggle "Ver mais características" */}
+          {/* Toggle "Ver mais características" */}
           <div className="mt-14">
             <div className="relative flex items-center justify-center">
-              <div className="absolute inset-x-0 h-[1px] bg-white/10" />
               <button
                 type="button"
                 onClick={() => setShowMoreSpecs((prev) => !prev)}
-                className="relative z-10 inline-flex items-center gap-2 bg-[#08090C] px-5 py-1.5 text-xs font-medium text-white/65 hover:text-white transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 rounded-full bg-[#0D1017] hover:bg-white/[0.08] px-6 py-2.5 text-xs font-medium text-white/75 hover:text-white transition-colors cursor-pointer"
               >
                 <span>{showMoreSpecs ? 'Ocultar características' : 'Ver mais características'}</span>
                 {showMoreSpecs ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -373,13 +460,10 @@ export default function CarDetailPage() {
                   transition={{ duration: 0.25 }}
                   className="overflow-hidden"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-10 text-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 pt-8 text-center">
                     {detailSheet.extraSpecs.map((extra) => (
-                      <div
-                        key={extra.label}
-                        className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.07]"
-                      >
-                        <p className="text-[11px] text-white/45 mb-1">{extra.label}</p>
+                      <div key={extra.label} className="p-5 rounded-3xl bg-[#0D1017]">
+                        <p className="text-xs text-white/45 mb-1.5">{extra.label}</p>
                         <p className="text-sm font-medium text-white/90">{extra.value}</p>
                       </div>
                     ))}
@@ -388,73 +472,55 @@ export default function CarDetailPage() {
               )}
             </AnimatePresence>
           </div>
-        </div>
-      </section>
 
-      {/* =====================================================================
-          4. BLOCO FINAL DE CONVERSÃO (Estúdio 3/4 + Preço + CTA "Reservar Sessão")
-         ===================================================================== */}
-      <section className="pt-16 sm:pt-20 pb-8 px-6 border-t border-white/[0.06] relative overflow-hidden">
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-[700px] h-[280px] bg-[radial-gradient(ellipse,rgba(255,255,255,0.05)_0%,transparent_70%)] pointer-events-none" />
-
-        <div className="container mx-auto max-w-4xl relative z-10">
-          <div className="relative flex flex-col items-center">
-            {/* Nome + Preço posicionados de forma editorial acima/à direita */}
-            <div className="w-full flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-2 sm:mb-0 sm:px-8">
-              <div>
-                <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-white/45">
-                  {car.marca} ·{' '}
-                  {car.circuitosDisponiveis && car.circuitosDisponiveis.length > 0
-                    ? car.circuitosDisponiveis.map((c) => c.nome.split(' ')[0]).join(' · ')
-                    : displaySpecs.circuit}
-                </p>
-              </div>
-              <div className="sm:text-right">
-                <h3 className="text-2xl sm:text-3xl font-medium tracking-tight text-white">
-                  {car.modelo}
-                </h3>
-                <p className="text-xs sm:text-sm text-white/55 mt-0.5 tabular-nums">
-                  a partir de <span className="text-white font-medium">{formatPrice(car.precoPorDia)}</span> / sessão
-                </p>
-              </div>
+          {/* Barra Final Integrada: Reservar Sessão + Ver Toda a Frota */}
+          <div className="mt-14 rounded-3xl bg-[#0D1017] p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="text-center sm:text-left">
+              <p className="text-lg sm:text-xl font-medium tracking-tight text-white">
+                {car.marca} {car.modelo}
+              </p>
+              <p className="text-xs sm:text-sm text-white/50 mt-1 tabular-nums">
+                Sessões a partir de{' '}
+                <span className="text-white font-medium">{formatPrice(car.precoPorDia)}</span>{' '}
+                · combustível e telemetria VBOX inclusos
+              </p>
             </div>
 
-            {/* Recorte 3/4 Studio */}
-            <div className="relative w-full max-w-2xl h-56 sm:h-72 flex items-center justify-center my-2">
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[74%] h-8 rounded-full bg-black/90 blur-xl pointer-events-none" />
-              <img
-                src={studioImage}
-                alt={`${car.marca} ${car.modelo}`}
-                className="relative z-10 w-full h-full object-contain drop-shadow-[0_22px_32px_rgba(0,0,0,0.9)]"
-                loading="lazy"
-              />
-            </div>
-
-            {/* Botões de Ação */}
-            <div className="mt-6 flex flex-col sm:flex-row items-center gap-4">
-              {isStaff ? (
-                <Link
-                  to={staffTarget}
-                  className="px-10 py-3 border border-white/20 bg-white/10 hover:bg-[#FF1717] hover:border-[#FF1717] text-white text-xs sm:text-sm font-medium tracking-wide rounded-full transition-all duration-200 shadow-lg active:scale-[0.98]"
-                >
-                  Gerenciar nos Boxes
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsBookingOpen(true)}
-                  className="px-10 py-3 border border-[#FF1717] bg-[#FF1717] hover:bg-[#e01414] text-white text-xs sm:text-sm font-medium tracking-wide rounded-full transition-all duration-200 cursor-pointer shadow-lg shadow-[#FF1717]/25 hover:shadow-[#FF1717]/40 active:scale-[0.98]"
-                >
-                  Reservar Sessão
-                </button>
-              )}
-
+            <div className="flex flex-wrap items-center justify-center gap-4">
               <Link
                 to="/cars"
-                className="text-xs font-medium text-white/50 hover:text-white transition-colors px-4 py-2"
+                className="px-5 py-2.5 rounded-full bg-white/[0.05] hover:bg-white/[0.1] text-xs sm:text-sm font-medium text-white/75 hover:text-white transition-colors"
               >
                 Ver toda a frota
               </Link>
+
+              {isStaff ? (
+                <Link
+                  to={staffTarget}
+                  className="inline-flex items-center gap-2 bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs sm:text-sm font-medium px-6 py-3 rounded-full transition-colors"
+                >
+                  <span>Gerenciar nos boxes</span>
+                  <ArrowUpRight size={15} />
+                </Link>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingOpen(true)}
+                    className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs sm:text-sm font-medium px-6 py-3 rounded-full transition-colors cursor-pointer"
+                  >
+                    Reservar sessão
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBookingOpen(true)}
+                    aria-label="Reservar sessão"
+                    className="w-10 h-10 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
+                  >
+                    <ArrowUpRight size={16} />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

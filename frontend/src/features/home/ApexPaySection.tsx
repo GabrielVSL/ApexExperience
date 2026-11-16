@@ -1,315 +1,283 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import {
-  Wallet,
-  Clock,
-  ShieldAlert,
-  ArrowRight,
-  CheckCircle2,
-  Terminal,
-  RefreshCw,
-} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, Plus, Wifi, Wallet } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 
-interface SandboxMode {
-  id: 'saldo' | 'fatura' | 'juros';
-  tabLabel: string;
-  endpointTag: string;
-  headline: string;
-  description: string;
-  badgeText: string;
-  badgeClass: string;
-  balanceLabel: string;
-  balanceValue: string;
-  ledgerEntries: {
-    label: string;
-    detail: string;
-    amount: string;
-    positive?: boolean;
-  }[];
-  ruleNote: string;
-}
-
-const SANDBOX_MODES: SandboxMode[] = [
+const PARTNERS = [
   {
-    id: 'saldo',
-    tabLabel: 'Saldo Sandbox',
-    endpointTag: 'CARTEIRA_APEXPAY · GREEN FLAG',
-    headline: 'Aprovação Imediata via Saldo',
-    description:
-      'Adicione créditos fictícios via recarga instantânea e confirme vagas nos boxes em segundos, sem cartão de crédito real.',
-    badgeText: 'APROVADO · BOX LIBERADO',
-    badgeClass: 'border-emerald-500/35 bg-emerald-500/10 text-emerald-300',
-    balanceLabel: 'Saldo Simulado em Conta',
-    balanceValue: 'R$ 11.150,00',
-    ledgerEntries: [
-      {
-        label: 'Recarga Instantânea Sandbox',
-        detail: 'Crédito simulado · POST /api/apexpay/deposito',
-        amount: '+ R$ 15.000,00',
-        positive: true,
-      },
-      {
-        label: 'Track Experience · Spa-Francorchamps',
-        detail: 'Débito imediato na reserva · Status APROVADO',
-        amount: '- R$ 3.850,00',
-      },
-    ],
-    ruleNote: 'Cancelamentos estornam o saldo integralmente para a carteira sandbox.',
+    name: 'ApexPay',
+    renderLogo: () => (
+      <div className="flex items-center gap-2 text-white/60 group-hover:text-white transition-colors">
+        <img src="/logo.png" alt="" className="w-5 h-5 rounded-md object-contain grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all" />
+        <span className="text-base font-semibold tracking-tight">ApexPay</span>
+      </div>
+    ),
   },
   {
-    id: 'fatura',
-    tabLabel: 'Fatura Pós-Paga',
-    endpointTag: 'FATURA_APEXPAY · HOMOLOGAÇÃO',
-    headline: 'Débito Apenas na Confirmação',
-    description:
-      'Reserve mesmo com saldo zerado. A fatura aguarda a homologação do Race Control antes de lançar qualquer débito na sua conta.',
-    badgeText: 'AGUARDANDO_APROVACAO',
-    badgeClass: 'border-amber-500/35 bg-amber-500/10 text-amber-300',
-    balanceLabel: 'Saldo Após Reserva (Pré-Aprovação)',
-    balanceValue: 'R$ 0,00',
-    ledgerEntries: [
-      {
-        label: 'Pré-reserva de Box · Interlagos',
-        detail: 'Pagamento: FATURA_AGUARDANDO_APROVACAO',
-        amount: 'R$ 2.100,00 (retido)',
-        positive: true,
-      },
-      {
-        label: 'Homologação Race Control',
-        detail: 'Ao aprovar → debita em carteira/fatura; ao rejeitar → cancela sem ônus',
-        amount: 'Somente no aceite',
-      },
-    ],
-    ruleNote: 'Contrapropostas de horário/slot também só debitam quando o piloto aceita.',
+    name: 'Pirelli Track',
+    renderLogo: () => (
+      <div className="flex items-center gap-2 text-white/50 group-hover:text-white/90 transition-colors">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2.2" aria-hidden="true">
+          <circle cx="12" cy="12" r="8" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        <span className="text-base font-bold tracking-tight italic">Pirelli</span>
+      </div>
+    ),
   },
   {
-    id: 'juros',
-    tabLabel: 'Franquia & Juros',
-    endpointTag: 'SINISTRO_PISTA · 0,1% / DIA',
-    headline: 'Controle Transparente de Pendências',
-    description:
-      'Eventuais faturas em aberto ou franquias de dano em pista negativam o saldo simulado, bloqueando novos agendamentos até a quitação.',
-    badgeText: 'INADIMPLENTE · BLOQUEADO',
-    badgeClass: 'border-rose-500/35 bg-rose-500/10 text-rose-300',
-    balanceLabel: 'Saldo Devedor Simulado',
-    balanceValue: '- R$ 2.502,50',
-    ledgerEntries: [
-      {
-        label: 'Franquia de Pista Homologada (Sinistro)',
-        detail: 'Lançado apenas em sessões APROVADO de condução',
-        amount: '- R$ 2.500,00',
-      },
-      {
-        label: 'Encargo Diário de Atraso (0,1% a.d.)',
-        detail: 'Incidência automática sobre saldo negativo em aberto',
-        amount: '- R$ 2,50',
-      },
-    ],
-    ruleNote: 'Um único depósito no valor devido quita a pendência e desbloqueia a conta.',
-  },
-];
-
-const SANDBOX_PILLARS = [
-  {
-    icon: Wallet,
-    title: 'Pagamento Simulado sem Dinheiro Real',
-    description:
-      'Todo o fluxo financeiro roda em um gateway próprio (ApexPay Sandbox) para você testar recargas, agendamentos e estornos com segurança total.',
+    name: 'brembo',
+    renderLogo: () => (
+      <div className="flex items-center gap-1.5 text-white/50 group-hover:text-white/90 transition-colors">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden="true">
+          <path d="M12 3a9 9 0 0 0-9 9h4a5 5 0 0 1 5-5V3Zm0 18a9 9 0 0 0 9-9h-4a5 5 0 0 1-5 5v4Z" />
+        </svg>
+        <span className="text-base font-bold tracking-tight">brembo</span>
+      </div>
+    ),
   },
   {
-    icon: Clock,
-    title: 'Pré-Pago Imediato ou Fatura em 1 Etapa',
-    description:
-      'Escolha débito na hora via saldo para aprovação instantânea ou fatura pós-paga analisada diretamente pelo Race Control.',
+    name: 'VBOX',
+    renderLogo: () => (
+      <div className="flex items-center gap-2 text-white/50 group-hover:text-white/90 transition-colors">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+          <path d="M3 12h3l3-6 4 12 3-6h5" />
+        </svg>
+        <span className="text-sm font-semibold tracking-wide">VBOX</span>
+      </div>
+    ),
   },
   {
-    icon: ShieldAlert,
-    title: 'Regras Reais de Paddock',
-    description:
-      'Cobertura operacional transparente, histórico imutável de transações e proteção de agenda contra inadimplência em aberto.',
+    name: 'Motul',
+    renderLogo: () => (
+      <div className="flex items-center gap-1.5 text-white/50 group-hover:text-white/90 transition-colors">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden="true">
+          <path d="M12 2.5C8.5 7 6 10.6 6 14a6 6 0 0 0 12 0c0-3.4-2.5-7-6-11.5Z" />
+        </svg>
+        <span className="text-base font-bold tracking-tight">Motul</span>
+      </div>
+    ),
+  },
+  {
+    name: 'Sparco',
+    renderLogo: () => (
+      <div className="flex items-center gap-1.5 text-white/50 group-hover:text-white/90 transition-colors">
+        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M5 17 12 6l7 11" />
+          <path d="M8.5 14h7" />
+        </svg>
+        <span className="text-base font-medium tracking-tight italic">sparco</span>
+      </div>
+    ),
   },
 ];
 
 export function ApexPaySection() {
   const navigate = useNavigate();
   const { user, token } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'saldo' | 'fatura' | 'juros'>('saldo');
 
-  const activeMode = SANDBOX_MODES.find((m) => m.id === activeTab) || SANDBOX_MODES[0];
+  const handleOpenWallet = () => {
+    if (!token || !user) {
+      navigate('/login', { state: { from: '/apexpay' } });
+      return;
+    }
+    navigate('/apexpay');
+  };
 
   return (
-    <section className="relative py-24 md:py-32 bg-[#08090C] border-t border-white/[0.06] overflow-hidden">
-      {/* Glow radial discreto */}
-      <div
-        className="pointer-events-none absolute -top-24 left-1/4 w-[520px] h-[520px] rounded-full blur-[150px] opacity-30"
-        style={{ background: 'radial-gradient(circle, rgba(255,23,23,0.18), transparent 70%)' }}
-      />
+    <section className="relative pt-16 pb-20 sm:pt-24 sm:pb-28 px-6 bg-[#08090C] text-white overflow-hidden select-none">
+      <div className="container mx-auto max-w-6xl space-y-16 sm:space-y-24">
+        {/* Parte 1: Split Editorial + Cartão ApexPay com Halo Curvo (Inspirado na Ref. 1) */}
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.25 }}
+          transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+          className="relative rounded-3xl overflow-hidden bg-[#0D1017] p-8 sm:p-12 lg:p-14"
+        >
+          {/* Arco Radial Suave à Direita (versão dark em vermelho Apex do semicírculo da referência) */}
+          <div
+            className="pointer-events-none absolute -right-24 top-1/2 -translate-y-1/2 w-[480px] h-[480px] sm:w-[620px] sm:h-[620px] rounded-full opacity-90"
+            style={{
+              background:
+                'radial-gradient(circle at 35% 50%, rgba(255, 23, 23, 0.26) 0%, rgba(153, 27, 27, 0.12) 48%, transparent 76%)',
+            }}
+          />
 
-      <div className="max-w-7xl mx-auto px-6 lg:px-8 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
-          {/* Esquerda: Console Interativo do Gateway Sandbox ApexPay */}
-          <div className="lg:col-span-6 space-y-6">
-            {/* Seletor de cenários do Gateway Sandbox */}
-            <div className="inline-flex flex-wrap gap-1.5 p-1 rounded-full bg-white/[0.03] border border-white/10">
-              {SANDBOX_MODES.map((m) => {
-                const isActive = m.id === activeTab;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setActiveTab(m.id)}
-                    className={`px-4 py-1.5 rounded-full text-xs font-medium tracking-wide transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-[#FF1717] text-white shadow-md shadow-[#FF1717]/25'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    {m.tabLabel}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Painel Console Sandbox */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeMode.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#12151D] via-[#0B0D12] to-[#08090C] p-6 sm:p-7 shadow-[0_30px_80px_rgba(0,0,0,0.65)] space-y-6"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/[0.08]">
-                  <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-white/55">
-                    <Terminal size={13} className="text-[#FF1717]" />
-                    <span>{activeMode.endpointTag}</span>
-                  </div>
-                  <span
-                    className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-full border ${activeMode.badgeClass}`}
-                  >
-                    {activeMode.badgeText}
-                  </span>
-                </div>
-
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-widest text-white/45">
-                    {activeMode.balanceLabel}
-                  </p>
-                  <p className="text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums text-white mt-1">
-                    {activeMode.balanceValue}
-                  </p>
-                  <p className="text-xs text-white/60 mt-2 leading-relaxed">
-                    {activeMode.description}
-                  </p>
-                </div>
-
-                {/* Mini Extrato Simulado */}
-                <div className="space-y-2.5">
-                  {activeMode.ledgerEntries.map((entry) => (
-                    <div
-                      key={entry.label}
-                      className="flex items-center justify-between gap-4 px-4 py-3 rounded-xl bg-white/[0.025] border border-white/[0.07]"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-white truncate">{entry.label}</p>
-                        <p className="text-[11px] font-mono text-white/45 truncate mt-0.5">
-                          {entry.detail}
-                        </p>
-                      </div>
-                      <span
-                        className={`text-xs font-mono font-semibold shrink-0 tabular-nums ${
-                          entry.positive ? 'text-emerald-400' : 'text-white/80'
-                        }`}
-                      >
-                        {entry.amount}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-white/[0.08] text-[11px] text-white/55 font-mono">
-                  <RefreshCw size={12} className="text-[#FF1717] shrink-0" />
-                  <span>{activeMode.ruleNote}</span>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-
-          {/* Direita: Narrativa Editorial */}
-          <div className="lg:col-span-6 space-y-8">
-            <div>
-              <p className="text-[11px] font-mono uppercase tracking-[0.25em] text-[#FF1717] mb-3">
-                ApexPay · Gateway de Pagamentos Simulado
-              </p>
-              <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-white leading-[1.1] font-sans">
-                Checkout Completo em Ambiente Sandbox.
-              </h2>
-              <p className="text-sm sm:text-base text-white/65 font-normal leading-relaxed mt-4 max-w-xl">
-                Como a plataforma é um ambiente demonstrativo sem cobrança real de cartão ou Pix bancário, o ApexPay simula todo o ciclo financeiro de um autódromo: recarga instantânea, faturas homologadas pelo Race Control, estornos e gestão de pendências.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {SANDBOX_PILLARS.map((feat, idx) => {
-                const Icon = feat.icon;
-                const isWide = idx === 2;
-                return (
-                  <div
-                    key={feat.title}
-                    className={`p-5 rounded-2xl bg-white/[0.025] border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:border-white/15 transition-colors ${
-                      isWide ? 'sm:col-span-2' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-3.5">
-                      <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-[#FF1717] shrink-0 mt-0.5">
-                        <Icon size={17} />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-medium text-white tracking-tight mb-1">
-                          {feat.title}
-                        </h3>
-                        <p className="text-xs text-white/60 leading-relaxed">
-                          {feat.description}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-4 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!token || !user) {
-                    navigate('/login', { state: { from: '/apexpay' } });
-                    return;
-                  }
-                  navigate(user.role === 'ADMIN' ? '/admin' : '/apexpay');
-                }}
-                className="inline-flex items-center gap-2 bg-[#FF1717] hover:bg-[#e01414] text-white text-xs sm:text-sm font-medium px-7 py-3 rounded-full transition-all shadow-lg shadow-[#FF1717]/25 cursor-pointer"
-              >
-                <span>
-                  {user?.role === 'ADMIN'
-                    ? 'Abrir Painel Financeiro Admin'
-                    : 'Abrir Minha Carteira Sandbox'}
+          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
+            {/* Esquerda: Texto Direto + Botões de Ação */}
+            <div className="lg:col-span-6 space-y-6">
+              <div className="inline-flex items-center gap-2.5 pl-1.5 pr-4 py-1.5 rounded-full bg-white/[0.05]">
+                <span className="w-6 h-6 rounded-full bg-[#FF1717] flex items-center justify-center text-white shadow-[0_0_16px_rgba(255,23,23,0.4)]">
+                  <Wallet size={12} />
                 </span>
-                <ArrowRight size={15} />
-              </button>
+                <span className="text-xs font-medium text-white/80">
+                  ApexPay · Carteira sandbox
+                </span>
+              </div>
 
-              <span className="inline-flex items-center gap-1.5 text-xs text-white/50 font-mono">
-                <CheckCircle2 size={13} className="text-emerald-400" />
-                Créditos fictícios gratuitos para teste
-              </span>
+              <h2 className="text-3xl sm:text-5xl font-medium tracking-tight text-white leading-[1.08] font-sans">
+                Ative sua conta hoje e acelere{' '}
+                <span className="italic font-light text-white/90">
+                  sem cartão real.
+                </span>
+              </h2>
+
+              <p className="text-xs sm:text-sm text-white/60 leading-relaxed max-w-md">
+                Todo o fluxo financeiro roda em créditos fictícios: recarregue saldo na hora, confirme vagas nos boxes e controle faturas pelo seu painel.
+              </p>
+
+              {/* Ações no estilo da Referência (Botão principal com seta circular + Link secundário) */}
+              <div className="flex flex-wrap items-center gap-5 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenWallet}
+                    className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs sm:text-sm font-medium px-6 py-3 rounded-full transition-colors cursor-pointer"
+                  >
+                    Abrir carteira sandbox
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenWallet}
+                    aria-label="Abrir carteira ApexPay"
+                    className="w-10 h-10 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
+                  >
+                    <ArrowUpRight size={16} />
+                  </button>
+                </div>
+
+                <Link
+                  to="/pistas"
+                  className="text-xs sm:text-sm font-medium text-white/75 hover:text-white transition-colors"
+                >
+                  Explorar pistas
+                </Link>
+              </div>
+            </div>
+
+            {/* Direita: Cartão ApexPay Black Flutuante */}
+            <div className="lg:col-span-6 flex items-center justify-center lg:justify-end">
+              <div className="relative w-full max-w-[400px]">
+                {/* Recorte / Pílula "+ Recarregar" no topo direito (como "+ SET BUDGET") */}
+                <button
+                  type="button"
+                  onClick={handleOpenWallet}
+                  className="absolute -top-3 right-3 z-20 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-medium shadow-[0_8px_24px_rgba(255,23,23,0.45)] transition-transform hover:scale-105 cursor-pointer"
+                >
+                  <span className="w-4 h-4 rounded-full bg-[#08090C]/30 flex items-center justify-center">
+                    <Plus size={11} />
+                  </span>
+                  <span>Recarregar</span>
+                </button>
+
+                {/* Corpo do Cartão */}
+                <div className="relative rounded-3xl bg-[#07080B] p-6 sm:p-7 shadow-[0_32px_80px_rgba(0,0,0,0.85)] overflow-hidden min-h-[225px] flex flex-col justify-between">
+                  {/* Textura sutil de mapa/luz interna */}
+                  <div
+                    className="pointer-events-none absolute inset-0 opacity-25"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 22% 30%, rgba(255,255,255,0.08) 0%, transparent 55%)',
+                    }}
+                  />
+
+                  {/* Faixa lateral vertical Contactless (como a pílula amarela na direita do cartão) */}
+                  <div className="absolute right-5 top-12 bottom-5 w-11 rounded-2xl bg-gradient-to-b from-[#FF3B3B] to-[#C8102E] flex items-center justify-center text-white shadow-[0_0_24px_rgba(255,23,23,0.35)]">
+                    <Wifi size={20} className="rotate-90" />
+                  </div>
+
+                  {/* Topo esquerdo: Marca ApexPay */}
+                  <div className="relative z-10 flex items-center gap-2">
+                    <img
+                      src="/logo.png"
+                      alt="ApexPay"
+                      className="w-5 h-5 rounded-md object-contain"
+                    />
+                    <span className="text-sm font-semibold tracking-tight text-white/90">
+                      ApexPay
+                    </span>
+                  </div>
+
+                  {/* Meio: Saldo e Número Mascarado */}
+                  <div className="relative z-10 pr-14 my-4">
+                    <span className="block text-xs text-white/45 mb-1">
+                      Saldo disponível
+                    </span>
+                    <div className="text-2xl sm:text-3xl font-semibold tracking-tight text-white tabular-nums">
+                      R$ 38.450,00
+                    </div>
+                    <div className="text-xs font-mono tracking-widest text-white/45 mt-2">
+                      •••• &nbsp;•••• &nbsp;•••• &nbsp;0178
+                    </div>
+                  </div>
+
+                  {/* Base: Titular & Validade */}
+                  <div className="relative z-10 pr-14 flex items-center justify-between text-xs text-white/60">
+                    <span>{user?.email ? user.email.split('@')[0] : 'Piloto Apex'}</span>
+                    <span className="tabular-nums text-white/45">Val. 08/29</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </motion.div>
+
+        {/* Parte 2: Globo em Dark Mode (Sem Cards Flutuantes) + Barra de Patrocinadores (Inspirado na Ref. 2) */}
+        <motion.div
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="relative flex flex-col items-center"
+        >
+          {/* Título discreto acima do globo */}
+          <div className="text-center max-w-xl mx-auto mb-4 sm:mb-6 relative z-10 space-y-2">
+            <h3 className="text-2xl sm:text-4xl font-medium tracking-tight text-white font-sans">
+              Conectado aos principais{' '}
+              <span className="italic font-light text-white/85">circuitos do mundo.</span>
+            </h3>
+            <p className="text-xs sm:text-sm text-white/50">
+              Saldo único válido em toda a rede homologada com parceiros de engenharia e pista.
+            </p>
+          </div>
+
+          {/* Globo Sem Cards ao Redor — integrado ao fundo #08090C */}
+          <div className="relative w-full max-w-5xl mx-auto flex flex-col items-center">
+            <div className="relative w-full overflow-hidden flex justify-center">
+              <img
+                src="/globo.png"
+                alt="Rede global Apex de circuitos"
+                className="w-full max-w-4xl h-auto object-contain mix-blend-screen opacity-95 pointer-events-none"
+                style={{
+                  maskImage:
+                    'radial-gradient(ellipse 75% 75% at 50% 50%, black 55%, transparent 100%)',
+                  WebkitMaskImage:
+                    'radial-gradient(ellipse 75% 75% at 50% 50%, black 55%, transparent 100%)',
+                }}
+              />
+              {/* Fade suave na base para ancorar a barra de patrocinadores */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#08090C] via-[#08090C]/75 to-transparent" />
+            </div>
+
+            {/* Faixa Arredondada de Patrocinadores (Versão Dark da Barra Inferior da Ref. 2) */}
+            <div className="relative z-10 -mt-10 sm:-mt-14 w-full max-w-4xl rounded-3xl sm:rounded-full bg-[#10131C]/90 backdrop-blur-md px-6 sm:px-10 py-5 shadow-[0_24px_60px_rgba(0,0,0,0.8)]">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-6 items-center justify-items-center">
+                {PARTNERS.map((partner) => (
+                  <div
+                    key={partner.name}
+                    className="group cursor-default flex items-center justify-center"
+                    title={partner.name}
+                  >
+                    {partner.renderLogo()}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </section>
   );

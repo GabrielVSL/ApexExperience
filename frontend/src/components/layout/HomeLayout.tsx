@@ -6,10 +6,9 @@ import Footer from '@/components/layout/Footer';
 import HeroVideo from '@/features/booking/HeroVideo';
 import { EditorialRideBanner } from '@/features/home/EditorialRideBanner';
 import { BrandShowcaseStrip } from '@/features/home/BrandShowcaseStrip';
-import { FleetCompareSection } from '@/features/home/FleetCompareSection';
-import { ComoFuncionaSection } from '@/features/home/ComoFuncionaSection';
+import { TrackExperienceBentoSection } from '@/features/home/TrackExperienceBentoSection';
 import { ApexPaySection } from '@/features/home/ApexPaySection';
-import { BookingModal, Automovel } from '@/features/cars/components/BookingModal';
+import type { Automovel } from '@/features/cars/components/BookingModal';
 import { api } from '@/services/api';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -17,23 +16,13 @@ export default function HomeLayout() {
   const { user } = useAuthStore();
   const showApexPay = !user || user.role === 'CLIENTE';
   const [cars, setCars] = useState<Automovel[]>([]);
-  const [isLoadingCars, setIsLoadingCars] = useState(true);
-  const [focusedBrand, setFocusedBrand] = useState<{ brand: string; seq: number } | null>(null);
-  const [selectedCar, setSelectedCar] = useState<Automovel | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     api
       .get('/api/automoveis')
       .then((res) => setCars(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setCars([]))
-      .finally(() => setIsLoadingCars(false));
+      .catch(() => setCars([]));
   }, []);
-
-  const handleOpenBooking = (car: Automovel) => {
-    setSelectedCar(car);
-    setIsModalOpen(true);
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#08090C] text-white selection:bg-[#FF1717] selection:text-white">
@@ -45,38 +34,20 @@ export default function HomeLayout() {
 
         <div id="main-content" />
 
-        {/* 2. Banner Editorial */}
+        {/* 2. Retrato do Piloto + Telemetria */}
         <EditorialRideBanner />
 
-        {/* 3. Faixa de Marcas com Spotlight */}
-        <BrandShowcaseStrip
-          onSelectBrand={(brand) =>
-            setFocusedBrand((prev) => ({ brand, seq: (prev?.seq ?? 0) + 1 }))
-          }
-        />
+        {/* 3. Engenharia Homologada (com link direto para detalhes do carro) */}
+        <BrandShowcaseStrip cars={cars} />
 
-        {/* 4. Comparativo Interativo de Frota sem Fundo */}
-        <FleetCompareSection
-          cars={cars}
-          isLoading={isLoadingCars}
-          focusedBrand={focusedBrand}
-          onSelectCar={handleOpenBooking}
-        />
+        {/* 4. Experiência em Pista (Calendário animado, Serviços, Carrossel & Circuito) */}
+        <TrackExperienceBentoSection />
 
-        {/* 5. Como Funciona a Experiência (Regras Arrive & Drive) */}
-        <ComoFuncionaSection />
-
-        {/* 6. Seção ApexPay (Gateway Sandbox, Pix Fictício & Fatura Pós-Paga) - Exclusiva para Pilotos/Clientes */}
+        {/* 5. Seção ApexPay (Cartão Sandbox + Globo Global + Patrocinadores) - Exclusiva para Pilotos/Clientes */}
         {showApexPay && <ApexPaySection />}
       </main>
 
       <Footer />
-
-      <BookingModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        car={selectedCar}
-      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ interface WorldMapCanvasProps {
   onSelectCircuit?: (circuit: Circuit) => void;
   filterCategory?: string;
   compact?: boolean;
+  defaultMapMode?: 'streets' | 'satellite';
 }
 
 export default function WorldMapCanvas({
@@ -19,6 +20,7 @@ export default function WorldMapCanvas({
   selectedCircuit,
   filterCategory = 'ALL',
   compact = false,
+  defaultMapMode = 'streets',
 }: WorldMapCanvasProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -26,7 +28,7 @@ export default function WorldMapCanvas({
   const tracksLayerRef = useRef<L.LayerGroup | null>(null);
   const currentTileLayerRef = useRef<L.TileLayer | null>(null);
 
-  const [mapMode, setMapMode] = useState<'streets' | 'satellite'>('streets');
+  const [mapMode, setMapMode] = useState<'streets' | 'satellite'>(defaultMapMode);
   const [gpsData, setGpsData] = useState<Record<string, [number, number][]>>({});
   const [isLoadingMap, setIsLoadingMap] = useState(true);
 
@@ -110,7 +112,7 @@ export default function WorldMapCanvas({
       worldCopyJump: true,
     });
 
-    const tileLayer = createTileLayer('streets');
+    const tileLayer = createTileLayer(defaultMapMode);
     tileLayer.addTo(map);
     currentTileLayerRef.current = tileLayer;
 

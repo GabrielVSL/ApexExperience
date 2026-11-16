@@ -16,7 +16,7 @@ import {
   Maximize2,
   X,
   Thermometer,
-  CalendarCheck,
+  ArrowUpRight,
 } from 'lucide-react';
 
 interface CircuitDisplayMeta {
@@ -86,10 +86,9 @@ export default function PistasPage() {
   const [isMuted, setIsMuted] = useState(true);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [weatherData, setWeatherData] = useState<Record<string, CircuitLiveWeather>>({});
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Índice da pista selecionada
   const currentIndex = CIRCUITS.findIndex((c) => c.id === selectedCircuit.id);
 
   const currentMeta = CIRCUIT_META[selectedCircuit.id] || {
@@ -113,7 +112,6 @@ export default function PistasPage() {
     handleSelectCircuit(CIRCUITS[prevIdx]);
   }, [currentIndex, handleSelectCircuit]);
 
-  // Transição do vídeo nativo: reseta poster até o novo vídeo carregar e dar play
   useEffect(() => {
     setIsVideoReady(false);
     if (videoRef.current) {
@@ -122,7 +120,6 @@ export default function PistasPage() {
     }
   }, [selectedCircuit.id]);
 
-  // Sincroniza áudio (mute / unmute) no vídeo nativo
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = isMuted;
@@ -132,7 +129,6 @@ export default function PistasPage() {
     }
   }, [isMuted]);
 
-  // Teclas de atalho no teclado (← Anterior, → Próxima, ESC fechar modais)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isBookingOpen || isMapModalOpen) {
@@ -154,7 +150,6 @@ export default function PistasPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isBookingOpen, isMapModalOpen, handleNextCircuit, handlePrevCircuit]);
 
-  // Carrega o clima ao vivo quando um circuito é selecionado
   useEffect(() => {
     if (weatherData[selectedCircuit.id]) return;
 
@@ -196,13 +191,8 @@ export default function PistasPage() {
 
   return (
     <div className="relative w-screen h-[100dvh] max-h-[100dvh] bg-[#08090C] text-white overflow-hidden select-none font-sans">
-      
-      {/* =========================================================================
-          1. PALCO DE STREAMING: VÍDEO NATIVO 1080P COM LOOP INFINITO E SEM OVERLAYS
-          ========================================================================= */}
+      {/* 1. Vídeo Nativo de Fundo */}
       <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        
-        {/* Poster estático imediato (desaparece assim que o vídeo nativo iniciar) */}
         <img
           key={`poster-${selectedCircuit.id}`}
           src={selectedCircuit.videoThumbnail}
@@ -212,7 +202,6 @@ export default function PistasPage() {
           }`}
         />
 
-        {/* Player de Vídeo Nativo HTML5 (Zero YouTube, Zero Pause, Loop Infinito) */}
         <video
           ref={videoRef}
           key={`video-${selectedCircuit.id}`}
@@ -226,114 +215,97 @@ export default function PistasPage() {
           className="absolute inset-0 w-full h-full object-cover opacity-85 z-0"
         />
 
-        {/* MÁSCARAS DE VINHETA CINEMATOGRÁFICA */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#08090C] via-[#08090C]/90 via-40% md:via-50% to-transparent z-10" />
+        {/* Vinhetas suaves para legibilidade sem cortes bruscos */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#08090C] via-[#08090C]/88 via-45% md:via-52% to-transparent z-10" />
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-[#08090C] via-[#08090C]/60 to-transparent z-10" />
         <div className="absolute bottom-0 left-0 right-0 h-44 bg-gradient-to-t from-[#08090C] via-[#08090C]/90 to-transparent z-10" />
       </div>
 
-      {/* =========================================================================
-          2. CONTROLE DE ÁUDIO DO VÍDEO (Abaixo da navbar, sem moldura e discreto)
-          ========================================================================= */}
+      {/* 2. Controle de Áudio Discreto */}
       <div className="absolute top-20 sm:top-24 right-6 sm:right-10 z-20 pointer-events-auto">
         <button
           type="button"
           onClick={() => setIsMuted((prev) => !prev)}
-          className="text-white/40 hover:text-white transition-colors cursor-pointer p-1.5 focus:outline-none"
+          className="w-9 h-9 rounded-full bg-[#0D1017]/80 backdrop-blur-md text-white/55 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
           title={isMuted ? 'Ativar som do motor' : 'Mutar som'}
           aria-label={isMuted ? 'Ativar som do motor' : 'Mutar som'}
         >
           {isMuted ? (
-            <VolumeX size={18} className="text-white/40 hover:text-white transition-colors" />
+            <VolumeX size={16} />
           ) : (
-            <Volume2 size={18} className="text-[#FF1717] hover:text-[#ff4d4d] transition-colors" />
+            <Volume2 size={16} className="text-[#FF1717]" />
           )}
         </button>
       </div>
 
-      {/* =========================================================================
-          3. ÁREA PRINCIPAL: COLUNA ESQUERDA (ESPECIFICAÇÕES, CARROS E MAPA FLEXÍVEL)
-          ========================================================================= */}
-      <div className="relative z-10 w-full h-full flex flex-col justify-start pt-14 sm:pt-16 pb-20 px-6 sm:px-10 lg:px-14 pointer-events-none overflow-hidden">
-        
+      {/* 3. Coluna Principal Esquerda */}
+      <div className="relative z-10 w-full h-full flex flex-col justify-start pt-16 sm:pt-20 pb-22 px-6 sm:px-10 lg:px-14 pointer-events-none overflow-hidden">
         <div className="max-w-2xl w-full flex flex-col justify-start pointer-events-auto h-full pb-2">
-          
-          {/* Linha 1: Eyebrow com Mini Bandeira Vetorial + País + Modalidade */}
-          <div className="flex items-center gap-2.5 mb-1.5 shrink-0">
+          {/* Pill de Localização com Bandeira */}
+          <div className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1 rounded-full bg-white/[0.06] backdrop-blur-md self-start mb-2.5 shrink-0">
             <CountryFlag countryCode={currentMeta.countryCode} className="w-4 h-3 rounded-[2px]" />
-            <p className="text-[11px] font-mono font-medium tracking-[0.2em] text-white/60 uppercase">
+            <span className="text-xs font-medium text-white/80">
               {currentMeta.countryName} · {currentMeta.modality}
-            </p>
+            </span>
           </div>
 
-          {/* Linha 2: Nome do Circuito */}
-          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-medium tracking-tight text-white leading-[1.08] mb-1.5 shrink-0">
+          {/* Título do Circuito */}
+          <h1 className="text-2xl sm:text-4xl lg:text-[44px] font-medium tracking-tight text-white leading-[1.08] mb-2 shrink-0">
             {selectedCircuit.name}
           </h1>
 
-          {/* Linha 3: Sinopse Editorial */}
-          <p className="text-xs sm:text-sm text-white/75 font-normal leading-relaxed mb-3 max-w-xl shrink-0">
+          {/* Sinopse */}
+          <p className="text-xs sm:text-sm text-white/65 font-normal leading-relaxed mb-3.5 max-w-xl shrink-0 line-clamp-2">
             {selectedCircuit.synopsis}
           </p>
 
-          {/* Linha 4: ESPECIFICAÇÕES DA PISTA (Acima dos carros, estética minimalista e clean) */}
-          <div className="flex items-center gap-4 sm:gap-6 py-2 px-3.5 mb-3 rounded-xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-md max-w-xl shrink-0">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-mono uppercase tracking-widest text-white/45">Extensão</span>
-              <span className="text-xs sm:text-sm font-medium text-white font-mono mt-0.5">
+          {/* Barra de Telemetria da Pista (Sem Borda Dura, Arredondada) */}
+          <div className="flex flex-wrap items-center gap-5 sm:gap-7 py-3 px-4 mb-3.5 rounded-2xl bg-[#0D1017]/85 backdrop-blur-md max-w-xl shrink-0">
+            <div>
+              <span className="block text-[11px] text-white/45">Extensão</span>
+              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
                 {selectedCircuit.lengthKm}
               </span>
             </div>
-            
-            <div className="w-[1px] h-6 bg-white/10" />
 
-            <div className="flex flex-col">
-              <span className="text-[9px] font-mono uppercase tracking-widest text-white/45">Curvas</span>
-              <span className="text-xs sm:text-sm font-medium text-white font-mono mt-0.5">
+            <div>
+              <span className="block text-[11px] text-white/45">Traçado</span>
+              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
                 {selectedCircuit.corners} curvas
               </span>
             </div>
 
-            <div className="w-[1px] h-6 bg-white/10" />
-
-            <div className="flex flex-col">
-              <span className="text-[9px] font-mono uppercase tracking-widest text-white/45">Recorde</span>
-              <span className="text-xs sm:text-sm font-medium text-white font-mono mt-0.5">
+            <div>
+              <span className="block text-[11px] text-white/45">Recorde</span>
+              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
                 {selectedCircuit.lapRecord}
               </span>
             </div>
 
             {activeWeather && (
-              <>
-                <div className="w-[1px] h-6 bg-white/10 hidden sm:block" />
-                <div className="flex-col hidden sm:flex">
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-white/45">Asfalto</span>
-                  <span className="text-xs sm:text-sm font-medium text-white font-mono mt-0.5 flex items-center gap-1">
-                    <Thermometer size={11} className="text-[#FF1717]" />
-                    {activeWeather.temperature}°C ({activeWeather.gripStatus})
-                  </span>
-                </div>
-              </>
+              <div className="hidden sm:block">
+                <span className="block text-[11px] text-white/45">Asfalto</span>
+                <span className="text-xs sm:text-sm font-medium text-white tabular-nums inline-flex items-center gap-1">
+                  <Thermometer size={12} className="text-[#FF1717]" />
+                  {activeWeather.temperature}°C · {activeWeather.gripStatus}
+                </span>
+              </div>
             )}
           </div>
 
-          {/* Linha 5: Supercarros no Box (Fonte ?nica da API + Est?tica Transparente Clean sem Cards Blocados) */}
-          <div className="mb-3 max-w-xl shrink-0">
+          {/* Supercarros Homologados no Box + Botão de Disponibilidade */}
+          <div className="mb-3.5 max-w-xl shrink-0">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-mono text-white/50 uppercase tracking-widest">
-                Supercarros homologados no box deste circuito
+              <span className="text-xs font-medium text-white/60">
+                Supercarros homologados no box
               </span>
-              <button
-                type="button"
-                onClick={() => handleOpenBooking()}
-                className="text-[10px] font-mono text-white/45 hover:text-white transition-colors cursor-pointer"
-              >
-                {circuitCars.length} modelos dispon?veis
-              </button>
+              <span className="text-[11px] text-white/45 tabular-nums">
+                {circuitCars.length} {circuitCars.length === 1 ? 'modelo' : 'modelos'}
+              </span>
             </div>
 
             {circuitCars.length > 0 ? (
-              <div className="grid grid-cols-3 gap-3 sm:gap-5 items-end">
+              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
                 {circuitCars.map((car) => {
                   const specs = getCarDisplaySpecs(car);
                   return (
@@ -341,84 +313,89 @@ export default function PistasPage() {
                       key={car.id}
                       type="button"
                       onClick={() => handleOpenBooking(car)}
-                      className="group relative text-left cursor-pointer focus:outline-none pt-1 pb-2"
-                      title={`Agendar sess?o com ${car.marca} ${car.modelo}`}
+                      className="group relative rounded-2xl bg-[#0D1017]/80 hover:bg-[#141925] backdrop-blur-md p-2.5 sm:p-3 text-left transition-all duration-200 cursor-pointer"
+                      title={`Agendar sessão com ${car.marca} ${car.modelo}`}
                     >
-                      <div className="relative h-16 sm:h-20 w-full flex items-center justify-center mb-1.5">
-                        <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-[78%] h-3 rounded-full bg-black/85 blur-md group-hover:bg-[#FF1717]/25 transition-colors duration-300 pointer-events-none" />
+                      <div className="relative h-14 sm:h-16 w-full flex items-center justify-center mb-2">
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[75%] h-3 rounded-full bg-black/80 blur-md group-hover:bg-[#FF1717]/20 transition-colors pointer-events-none" />
                         <img
                           src={resolveStudioCarImage(car)}
                           alt={`${car.marca} ${car.modelo}`}
                           loading="lazy"
-                          className="relative z-10 w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.92)] group-hover:-translate-y-1 group-hover:scale-[1.06] transition-all duration-300"
+                          className="relative z-10 w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.9)] group-hover:-translate-y-0.5 group-hover:scale-[1.05] transition-transform duration-300"
                         />
                       </div>
 
-                      <div className="h-[1px] w-full bg-white/10 group-hover:bg-[#FF1717] transition-colors mb-1.5" />
-
-                      <p className="text-[11px] font-medium text-white/90 group-hover:text-white transition-colors truncate">
+                      <p className="text-[11px] sm:text-xs font-medium text-white truncate">
                         {car.modelo}
                       </p>
-                      <p className="text-[10px] text-white/45 font-mono truncate">
-                        {specs.power} ? {specs.accel}
+                      <p className="text-[10px] sm:text-[11px] text-white/45 tabular-nums truncate">
+                        {specs.power} · {specs.accel}
                       </p>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <p className="text-xs font-mono text-white/40 py-4">
+              <p className="text-xs text-white/40 py-3">
                 Conecte o backend para carregar os carros deste box...
               </p>
             )}
           </div>
 
-{/* Linha 6: Botão de Disponibilidade ou Gerenciamento (Alinhado à Direita) */}
-          <div className="flex justify-end mb-2 max-w-xl shrink-0">
+          {/* Ação Principal (Estética Pílula + Círculo Vermelho) */}
+          <div className="flex items-center justify-between gap-4 mb-3 max-w-xl shrink-0">
+            <span className="text-[11px] text-white/45 hidden sm:inline">
+              Clique em um veículo ou abra a agenda completa do circuito
+            </span>
+
             {isStaff ? (
               <Link
                 to={staffTarget}
-                className="flex items-center gap-1.5 bg-white/10 hover:bg-[#FF1717] border border-white/15 hover:border-[#FF1717] text-white text-[11px] font-medium tracking-wider uppercase px-3.5 py-1.5 rounded-xl transition-all duration-200 shadow-md active:scale-[0.98]"
+                className="inline-flex items-center gap-2 bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-medium px-5 py-2.5 rounded-full transition-colors ml-auto"
               >
-                <CalendarCheck size={13} className="text-white" />
-                <span>Gerenciar nos Boxes</span>
+                <span>Gerenciar nos boxes</span>
+                <ArrowUpRight size={14} />
               </Link>
             ) : (
-              <button
-                type="button"
-                onClick={() => handleOpenBooking()}
-                className="flex items-center gap-1.5 bg-[#FF1717] hover:bg-[#e01414] text-white text-[11px] font-medium tracking-wider uppercase px-3.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer shadow-md shadow-[#FF1717]/20 hover:shadow-[#FF1717]/35 active:scale-[0.98]"
-              >
-                <CalendarCheck size={13} className="text-white" />
-                <span>Disponibilidade</span>
-              </button>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => handleOpenBooking()}
+                  className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs font-medium px-5 py-2.5 rounded-full transition-colors cursor-pointer"
+                >
+                  Ver disponibilidade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenBooking()}
+                  aria-label="Ver disponibilidade"
+                  className="w-9 h-9 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
+                >
+                  <ArrowUpRight size={15} />
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Linha 7: O MAPA REAL INTERATIVO EMBUTIDO (Altura Flexível para preencher o espaço) */}
-          <div className="w-full max-w-xl flex-1 min-h-[160px] max-h-[380px] rounded-2xl bg-[#08090C]/85 border border-white/10 backdrop-blur-md shadow-2xl overflow-hidden relative">
-            
-            {/* Botão de Tela Cheia: Símbolo minimalista flutuando no canto superior direito */}
+          {/* Mapa Interativo Arredondado Sem Borda */}
+          <div className="w-full max-w-xl flex-1 min-h-[140px] max-h-[340px] rounded-3xl bg-[#0D1017]/85 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.85)] overflow-hidden relative">
             <button
               type="button"
               onClick={() => setIsMapModalOpen(true)}
-              className="absolute top-2.5 right-2.5 z-20 w-7 h-7 rounded-lg bg-[#08090C]/80 hover:bg-[#08090C] text-white/70 hover:text-white border border-white/15 backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-lg hover:border-white/30"
+              className="absolute top-3 right-3 z-20 w-8 h-8 rounded-full bg-[#08090C]/85 hover:bg-[#FF1717] text-white/75 hover:text-white backdrop-blur-md flex items-center justify-center transition-colors cursor-pointer"
               title="Expandir mapa em tela cheia"
             >
-              <Maximize2 size={12} />
+              <Maximize2 size={13} />
             </button>
 
-            {/* Canvas do Mapa Interativo com Leaflet e traçado GPS */}
             <WorldMapCanvas
               circuits={CIRCUITS}
               selectedCircuit={selectedCircuit}
               compact={true}
             />
-
           </div>
-
         </div>
-
       </div>
 
       {/* =========================================================================
@@ -471,22 +448,18 @@ export default function PistasPage() {
         </div>
       </div>
 
-      {/* =========================================================================
-          5. MODAL DE SATÉLITE / MAPA EXPANDIDO (Tela Cheia)
-          ========================================================================= */}
+      {/* 5. Modal do Mapa em Tela Cheia Sem Bordas */}
       {isMapModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-6xl h-[85vh] rounded-2xl bg-[#08090C] border border-white/15 overflow-hidden shadow-2xl flex flex-col">
-            
-            {/* Header do Modal */}
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-[#0C0E13] z-10">
+          <div className="relative w-full max-w-6xl h-[85vh] rounded-3xl bg-[#0D1017] overflow-hidden shadow-2xl flex flex-col">
+            <div className="px-6 py-4 flex items-center justify-between bg-[#0B0E14] z-10">
               <div className="flex items-center gap-3">
-                <CountryFlag countryCode={currentMeta.countryCode} className="w-6 h-4 rounded-sm" />
+                <CountryFlag countryCode={currentMeta.countryCode} className="w-6 h-4 rounded-[2px]" />
                 <div>
-                  <h3 className="text-base font-normal text-white">
-                    {selectedCircuit.name} — Malha Cartográfica & Satélite
+                  <h3 className="text-sm sm:text-base font-medium text-white">
+                    {selectedCircuit.name}
                   </h3>
-                  <p className="text-[11px] text-white/50">
+                  <p className="text-xs text-white/50">
                     {selectedCircuit.location} · {selectedCircuit.country}
                   </p>
                 </div>
@@ -495,14 +468,13 @@ export default function PistasPage() {
               <button
                 type="button"
                 onClick={() => setIsMapModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#FF1717] text-white flex items-center justify-center transition-colors cursor-pointer"
                 title="Fechar Mapa (ESC)"
               >
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
 
-            {/* Container do Leaflet em Tela Cheia */}
             <div className="flex-1 w-full h-full relative">
               <WorldMapCanvas
                 circuits={CIRCUITS}
@@ -510,14 +482,11 @@ export default function PistasPage() {
                 compact={false}
               />
             </div>
-
           </div>
         </div>
       )}
 
-      {/* =========================================================================
-          6. MODAL DE DISPONIBILIDADE & AGENDAMENTO
-          ========================================================================= */}
+      {/* 6. Modal de Disponibilidade & Agendamento */}
       <CircuitBookingModal
         circuit={selectedCircuit}
         availableCars={circuitCars}
@@ -528,7 +497,6 @@ export default function PistasPage() {
           setSelectedCarForBooking(null);
         }}
       />
-
     </div>
   );
 }

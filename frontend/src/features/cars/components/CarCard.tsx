@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Flame, Gauge, Zap } from 'lucide-react';
 import { Automovel } from './BookingModal';
 import { useCurrencyStore } from '@/store/useCurrencyStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -41,110 +41,118 @@ export function CarCard({ carro, index, onSelect }: CarCardProps) {
 
   return (
     <motion.article
-      initial={{ opacity: 0, y: 14 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: Math.min(index * 0.04, 0.24), duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="group flex flex-col"
+      transition={{ delay: Math.min(index * 0.04, 0.24), duration: 0.38, ease: [0.16, 1, 0.3, 1] }}
+      className="group relative rounded-3xl bg-[#0D1017] hover:bg-[#121621] p-6 sm:p-7 flex flex-col justify-between transition-colors duration-300 overflow-hidden"
     >
-      {/* Topo editorial sem borda de card */}
-      <div className="flex items-baseline justify-between gap-3 mb-2">
+      {/* Glow radial sutil no hover */}
+      <div
+        className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full opacity-0 group-hover:opacity-60 transition-opacity duration-500 blur-2xl"
+        style={{
+          background:
+            'radial-gradient(circle, rgba(255, 23, 23, 0.2) 0%, transparent 70%)',
+        }}
+      />
+
+      {/* Topo do Card: Nome + Subtítulo à esquerda | Categoria + Link à direita */}
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            to={`/cars/${carro.id}`}
+            className="block text-lg sm:text-xl font-medium tracking-tight text-white group-hover:text-white transition-colors truncate"
+          >
+            {carro.marca} {carro.modelo}
+          </Link>
+          <p className="text-xs text-white/45 mt-0.5">
+            {specs.category} Track · {carro.ano}
+          </p>
+        </div>
+
         <Link
           to={`/cars/${carro.id}`}
-          className="text-xl sm:text-2xl font-medium tracking-tight text-white hover:text-[#FF1717] transition-colors"
+          aria-label={`Abrir ficha de ${carro.marca} ${carro.modelo}`}
+          className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#FF1717] text-white/70 hover:text-white flex items-center justify-center transition-colors shrink-0"
         >
-          {carro.marca} {carro.modelo}
+          <ArrowUpRight size={15} />
         </Link>
-        <span className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/45 shrink-0">
-          {specs.category} · {carro.ano}
-        </span>
       </div>
 
-      {/* Palco Studio Livre sem caixa fechada */}
+      {/* Palco da Imagem em Estúdio */}
       <Link
         to={`/cars/${carro.id}`}
-        className="relative h-56 sm:h-64 w-full flex items-center justify-center my-4 cursor-pointer"
+        className="relative z-10 h-44 sm:h-48 w-full flex items-center justify-center my-4 cursor-pointer"
         aria-label={`Ver detalhes de ${carro.marca} ${carro.modelo}`}
       >
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[78%] h-8 rounded-full bg-black/85 blur-xl group-hover:bg-[#FF1717]/15 transition-colors duration-500 pointer-events-none" />
-        <div className="absolute inset-x-10 top-6 bottom-6 rounded-full bg-[radial-gradient(ellipse,rgba(255,255,255,0.05)_0%,transparent_72%)] pointer-events-none" />
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-[74%] h-7 rounded-full bg-black/80 blur-xl group-hover:bg-[#FF1717]/15 transition-colors duration-500 pointer-events-none" />
         <img
           src={imageSrc}
           alt={`${carro.marca} ${carro.modelo}`}
           loading="lazy"
-          className="relative z-10 w-full h-full object-contain drop-shadow-[0_18px_28px_rgba(0,0,0,0.88)] group-hover:-translate-y-1 group-hover:scale-[1.03] transition-all duration-500"
+          className="relative z-10 w-full h-full object-contain drop-shadow-[0_16px_26px_rgba(0,0,0,0.85)] group-hover:-translate-y-1 group-hover:scale-[1.03] transition-all duration-500"
         />
       </Link>
 
-      {/* Grade de Especificações com Linhas Ultrafinas (Padrão FleetCompareSection) */}
-      <div>
-        <div className="grid grid-cols-3 gap-4 pb-4 border-b border-white/10">
-          <div>
-            <p className="text-[11px] font-medium text-white/45 mb-1">Categoria</p>
-            <p className="text-xs sm:text-sm text-white/90 truncate">{specs.category} Track</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-white/45 mb-1">Potência</p>
-            <p className="text-xs sm:text-sm text-white/90 tabular-nums">{specs.power}</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-medium text-white/45 mb-1">Homologação</p>
-            <p className="text-xs sm:text-sm text-white/90 truncate">
-              {circuitosList.length > 1 ? `${circuitosList.length} circuitos` : circuitosList[0]}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 py-4 border-b border-white/10 items-baseline">
-          <div className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-            {specs.topSpeed.replace(/ km\/h/i, '')}
-            <span className="text-[11px] text-white/45 font-normal ml-1">km/h</span>
-          </div>
-          <div className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-            {specs.accel.replace(/s$/i, '')}
-            <span className="text-[11px] text-white/45 font-normal ml-1">s (0–100)</span>
-          </div>
-          <div className="text-lg sm:text-xl font-medium tracking-tight text-white tabular-nums">
-            {formatPrice(carro.precoPorDia)}
-            <span className="text-[11px] text-white/45 font-normal ml-1">/sessão</span>
-          </div>
-        </div>
-
-        <div className="py-3.5 border-b border-white/10 flex items-center justify-between gap-4 text-xs">
-          <span className="text-white/45 font-mono uppercase tracking-wider text-[10px] shrink-0">
-            Boxes disponíveis
-          </span>
-          <span className="text-white/75 truncate text-right">
-            {circuitosList.join(' · ')}
-          </span>
-        </div>
-
-        {/* Ações limpas */}
-        <div className="pt-5 flex items-center justify-between gap-3">
-          <Link
-            to={`/cars/${carro.id}`}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-white/65 hover:text-white transition-colors"
+      {/* Pílulas de Circuitos Homologados */}
+      <div className="relative z-10 flex flex-wrap items-center justify-end gap-1.5 mb-4">
+        {circuitosList.slice(0, 3).map((circuito) => (
+          <span
+            key={circuito}
+            className="px-2.5 py-0.5 rounded-full text-[11px] bg-white/[0.05] text-white/60"
           >
-            <span>Ficha técnica</span>
-            <ArrowUpRight size={14} />
-          </Link>
+            {circuito}
+          </span>
+        ))}
+      </div>
 
-          {isStaff ? (
-            <Link
-              to={staffTarget}
-              className="bg-white/10 text-white hover:bg-[#FF1717] border border-white/15 hover:border-[#FF1717] text-xs font-medium px-6 py-2.5 rounded-full transition-all duration-200 active:scale-[0.98]"
-            >
-              Gerenciar nos Boxes
-            </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onSelect(carro)}
-              className="bg-[#F3F4F6] text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-medium px-6 py-2.5 rounded-full transition-all duration-200 cursor-pointer active:scale-[0.98]"
-            >
-              Reservar Sessão
-            </button>
-          )}
+      {/* Linha de Telemetria Compacta + Preço (inspirado no rodapé dos cards da ref.) */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-white/[0.06]">
+        <div className="flex items-center gap-3.5 text-xs text-white/60 tabular-nums">
+          <span className="inline-flex items-center gap-1" title="Potência">
+            <Gauge size={13} className="text-[#FF1717]" />
+            {specs.power}
+          </span>
+          <span className="inline-flex items-center gap-1" title="0 a 100 km/h">
+            <Zap size={13} className="text-amber-300" />
+            {specs.accel}
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1" title="Velocidade máxima">
+            <Flame size={13} className="text-emerald-300" />
+            {specs.topSpeed}
+          </span>
         </div>
+
+        <div className="text-base sm:text-lg font-semibold tracking-tight text-white tabular-nums">
+          {formatPrice(carro.precoPorDia)}
+          <span className="text-xs font-normal text-white/45 ml-0.5">/sessão</span>
+        </div>
+      </div>
+
+      {/* Ação Rápida de Reserva */}
+      <div className="relative z-10 mt-5 flex items-center justify-between gap-3">
+        <Link
+          to={`/cars/${carro.id}`}
+          className="text-xs font-medium text-white/55 hover:text-white transition-colors"
+        >
+          Ver ficha técnica
+        </Link>
+
+        {isStaff ? (
+          <Link
+            to={staffTarget}
+            className="bg-white/[0.08] hover:bg-[#FF1717] text-white text-xs font-medium px-5 py-2.5 rounded-full transition-colors"
+          >
+            Gerenciar nos boxes
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onSelect(carro)}
+            className="bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-medium px-5 py-2.5 rounded-full transition-colors cursor-pointer"
+          >
+            Reservar sessão
+          </button>
+        )}
       </div>
     </motion.article>
   );

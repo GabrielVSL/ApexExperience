@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, X } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { ptBR } from 'date-fns/locale';
 import { format, parseISO, startOfDay } from 'date-fns';
@@ -22,12 +22,12 @@ export function getDayOperationProfile(dateStr: string): {
   const parsed = parseISO(dateStr);
   const day = parsed.getDay();
   if (day === 1) {
-    return { label: 'Manutenção FIA · Fechado', tone: 'text-rose-400' };
+    return { label: 'Manutenção FIA', tone: 'text-rose-400' };
   }
   if (day === 5 || day === 6 || day === 0) {
-    return { label: 'Sex–Dom · Full Grid + Noturno', tone: 'text-emerald-400' };
+    return { label: 'Full Grid + Noturno', tone: 'text-emerald-400' };
   }
-  return { label: 'Ter–Qui · Operação Reduzida (2 turnos)', tone: 'text-amber-300' };
+  return { label: 'Operação Técnica', tone: 'text-amber-300' };
 }
 
 export function CarsFilter({ selectedDate, onDateChange, onClear }: CarsFilterProps) {
@@ -55,31 +55,29 @@ export function CarsFilter({ selectedDate, onDateChange, onClear }: CarsFilterPr
   };
 
   return (
-    <div className="relative" ref={popupRef}>
-      <div className="flex items-center gap-2">
+    <div className="relative w-full" ref={popupRef}>
+      <div className="flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className={`flex items-center gap-2.5 pb-1.5 border-b text-xs font-medium transition-colors cursor-pointer ${
-            selectedDate
-              ? 'border-[#FF1717] text-white'
-              : 'border-white/15 hover:border-white/40 text-white/75 hover:text-white'
-          }`}
+          className="w-full flex items-center justify-between gap-2 text-left text-xs sm:text-sm font-medium text-white cursor-pointer group"
         >
-          <span className="text-[10px] font-mono uppercase tracking-wider text-white/40">
-            Data:
-          </span>
-          <span className="tabular-nums">
-            {selectedDate ? format(parseISO(selectedDate), 'dd/MM/yyyy') : 'Qualquer sessão'}
-          </span>
-          {profile && (
-            <span className={`hidden sm:inline text-[10px] font-mono ${profile.tone}`}>
-              ({profile.label})
+          <span className="flex items-center gap-2 truncate">
+            <CalendarDays size={14} className="text-[#FF1717] shrink-0" />
+            <span className="tabular-nums truncate">
+              {selectedDate ? format(parseISO(selectedDate), 'dd/MM/yyyy') : 'Qualquer data'}
             </span>
-          )}
+            {profile && (
+              <span className={`hidden xl:inline text-[11px] font-normal ${profile.tone}`}>
+                · {profile.label}
+              </span>
+            )}
+          </span>
           <ChevronDown
-            size={13}
-            className={`text-white/45 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            size={14}
+            className={`text-white/40 group-hover:text-white transition-transform shrink-0 ${
+              isOpen ? 'rotate-180' : ''
+            }`}
           />
         </button>
 
@@ -87,7 +85,7 @@ export function CarsFilter({ selectedDate, onDateChange, onClear }: CarsFilterPr
           <button
             type="button"
             onClick={onClear}
-            className="text-white/40 hover:text-white p-1 transition-colors cursor-pointer"
+            className="text-white/40 hover:text-white p-1 rounded-full hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
             title="Limpar data"
           >
             <X size={13} />
@@ -102,9 +100,9 @@ export function CarsFilter({ selectedDate, onDateChange, onClear }: CarsFilterPr
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 6 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-3 z-50 w-[320px] bg-[#0B0E14] border border-white/15 rounded-xl p-4 shadow-2xl"
+            className="absolute right-0 top-full mt-4 z-50 w-[320px] bg-[#121622] rounded-3xl p-4 shadow-[0_28px_70px_rgba(0,0,0,0.85)]"
           >
-            <div className="bg-white rounded-lg p-2.5">
+            <div className="bg-white rounded-2xl p-2.5">
               <DayPicker
                 mode="single"
                 selected={parsedSelected}
@@ -115,10 +113,10 @@ export function CarsFilter({ selectedDate, onDateChange, onClear }: CarsFilterPr
               />
             </div>
 
-            <div className="mt-3 pt-3 border-t border-white/10 space-y-1 text-[10px] font-mono">
-              <p className="text-rose-400/90">• Segunda: Pista fechada (Manutenção FIA)</p>
-              <p className="text-amber-300/85">• Ter–Qui: Operação reduzida (Manhã/Tarde)</p>
-              <p className="text-emerald-400/90">• Sex–Dom: Full Grid + Sessão Noturna</p>
+            <div className="mt-3 pt-3 space-y-1 text-[11px] text-white/60">
+              <p className="text-rose-400">• Segunda: Pista fechada (Manutenção FIA)</p>
+              <p className="text-amber-300">• Ter–Qui: Operação técnica (Manhã/Tarde)</p>
+              <p className="text-emerald-400">• Sex–Dom: Full Grid + Sessão Noturna</p>
             </div>
           </motion.div>
         )}

@@ -35,6 +35,7 @@ const CAR_PROFILES: CarProfileConfig[] = [
   {
     match: ['cayman', 'gt4'],
     studio: '/cars/cayman-studio.webp',
+    side: '/cars/cayman-side.webp',
     circuit: 'Mônaco',
     power: '500 CV',
     accel: '3.4s',
@@ -111,6 +112,7 @@ const CAR_PROFILES: CarProfileConfig[] = [
   {
     match: ['m8'],
     studio: '/cars/m8-studio.webp',
+    side: '/cars/m8-side.webp',
     circuit: 'Le Mans',
     power: '625 CV',
     accel: '3.2s',
@@ -186,6 +188,7 @@ const CAR_PROFILES: CarProfileConfig[] = [
   {
     match: ['black series', 'gtbs'],
     studio: '/cars/amg-bs-studio.webp',
+    side: '/cars/amg-bs-side.webp',
     circuit: 'Silverstone',
     power: '730 CV',
     accel: '3.2s',
@@ -261,6 +264,7 @@ const CAR_PROFILES: CarProfileConfig[] = [
   {
     match: ['e-tron', 'etron'],
     studio: '/cars/etrongt-studio.webp',
+    side: '/cars/etrongt-side.webp',
     circuit: 'Suzuka',
     power: '925 CV',
     accel: '2.5s',
@@ -298,6 +302,7 @@ const CAR_PROFILES: CarProfileConfig[] = [
   {
     match: ['audi', 'r8'],
     studio: '/cars/audi-studio.webp',
+    side: '/cars/audi-side.webp',
     circuit: 'Interlagos',
     power: '620 CV',
     accel: '3.1s',
