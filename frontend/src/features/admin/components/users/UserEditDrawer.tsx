@@ -63,6 +63,12 @@ interface UserEditDrawerProps {
 
 type DrawerTab = 'perfil' | 'cnh' | 'financeiro' | 'seguranca';
 
+const STATUS_CONTA_LABELS: Record<AdminUserDetail['statusConta'], { label: string; cls: string }> = {
+  ATIVO: { label: 'Ativo', cls: 'bg-emerald-500/15 text-emerald-300' },
+  BLOQUEADO_RESERVAS: { label: 'Reservas bloqueadas', cls: 'bg-amber-500/15 text-amber-300' },
+  SUSPENSO: { label: 'Suspenso', cls: 'bg-rose-500/15 text-rose-300' },
+};
+
 export default function UserEditDrawer({
   userId,
   isOpen,
@@ -90,10 +96,22 @@ export default function UserEditDrawer({
   const isAdmin = user?.email === 'admin@apex.com' || (user as any)?.role?.includes('ADMIN');
 
   useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (!isOpen || !userId) {
       setUser(null);
       return;
     }
+
+    setActiveTab('perfil');
+    setNovaSenha('');
 
     const fetchUserDetails = async () => {
       try {
@@ -170,428 +188,458 @@ export default function UserEditDrawer({
       const res = await api.post('/api/usuarios/recuperar-senha-whatsapp/solicitar', {
         telefone,
       });
-      toast.success(res.data?.message || 'Instruções de redefinição enviadas para o WhatsApp do piloto!');
+      toast.success(
+        res.data?.message || 'Instruções de redefinição enviadas para o WhatsApp do piloto!'
+      );
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Erro ao enviar WhatsApp.');
     }
   };
 
+  const statusMeta = STATUS_CONTA_LABELS[statusConta] || STATUS_CONTA_LABELS.ATIVO;
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[150] flex justify-end overflow-hidden">
-          {/* Backdrop Scrim */}
+        <div className="fixed inset-0 z-[150] flex justify-end overflow-hidden font-sans">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
           />
 
-          {/* Slide-over Drawer Panel */}
-          <motion.div
+          <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Editar ficha do piloto"
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="relative z-10 w-full max-w-[540px] h-full bg-[#0A0D14] border-l border-white/15 shadow-2xl flex flex-col justify-between"
+            transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+            className="relative z-10 w-full max-w-[540px] h-full sm:p-3 flex flex-col"
           >
-            {/* Header Sticky */}
-            <div className="p-6 border-b border-white/10 shrink-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-[#FF1717] font-semibold">
-                      Race Control · Piloto #{userId}
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                        statusConta === 'ATIVO'
-                          ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                          : statusConta === 'BLOQUEADO_RESERVAS'
-                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                          : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                      }`}
-                    >
-                      {statusConta}
-                    </span>
-                  </div>
-                  <h2 className="text-xl font-semibold text-white truncate mt-1">
-                    {user?.nome || 'Carregando piloto...'}
-                  </h2>
-                  <p className="text-xs text-white/50 font-mono truncate">{user?.email}</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-white/70 hover:text-white transition-colors cursor-pointer shrink-0"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* Drawer Tabs */}
-              <div className="flex gap-1.5 mt-5 border-b border-white/10 pb-2">
-                {[
-                  { id: 'perfil', label: 'Dados Pessoais', icon: User },
-                  { id: 'cnh', label: 'CNH & Piloto', icon: ShieldCheck },
-                  { id: 'financeiro', label: 'ApexPay', icon: CreditCard },
-                  { id: 'seguranca', label: 'Segurança & Status', icon: Settings },
-                ].map((tab) => {
-                  const Icon = tab.icon;
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setActiveTab(tab.id as DrawerTab)}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                        isActive
-                          ? 'bg-[#FF1717] text-white shadow-sm'
-                          : 'bg-white/[0.03] text-white/60 hover:text-white'
-                      }`}
-                    >
-                      <Icon size={13} />
-                      <span className="hidden sm:inline">{tab.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Body Scrollable */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
-              {isLoading ? (
-                <div className="h-64 flex items-center justify-center">
-                  <Loader2 className="animate-spin text-[#FF1717]" size={28} />
-                </div>
-              ) : (
-                <form id="edit-user-form" onSubmit={handleSave} className="space-y-4">
-                  {/* TAB 1: DADOS PESSOAIS */}
-                  {activeTab === 'perfil' && (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-[11px] font-medium text-white/70 mb-1">
-                          Nome Completo
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            required
-                            value={nome}
-                            onChange={(e) => setNome(e.target.value)}
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
-                          />
-                          <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-white/70 mb-1">
-                          E-mail de Contato
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="email"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 font-mono"
-                          />
-                          <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-white/70 mb-1">
-                          Telefone / WhatsApp (com DDD)
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="tel"
-                            placeholder="11987654321"
-                            value={telefone}
-                            onChange={(e) => setTelefone(e.target.value.replace(/\D/g, ''))}
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 font-mono"
-                          />
-                          <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                        </div>
-                        <p className="text-[10px] text-white/40 mt-1 pl-1">
-                          Utilizado para envio do código de segurança OTP e avisos de Race Control.
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-medium text-white/70 mb-1">
-                          Endereço Completo
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={endereco}
-                            onChange={(e) => setEndereco(e.target.value)}
-                            placeholder="Rua, número, cidade e estado"
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
-                          />
-                          <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                        </div>
-                      </div>
+            <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
+              {/* Cabeçalho */}
+              <div className="px-6 pt-6 pb-5 space-y-5 border-b border-white/[0.06] shrink-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#121622] text-[11px] font-medium text-white/75 tabular-nums">
+                        Piloto #{userId}
+                      </span>
+                      <span
+                        className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full ${statusMeta.cls}`}
+                      >
+                        {statusMeta.label}
+                      </span>
                     </div>
-                  )}
+                    <h2 className="text-xl font-medium text-white truncate">
+                      {user?.nome || 'Carregando piloto...'}
+                    </h2>
+                    <p className="text-xs text-white/50 truncate">{user?.email}</p>
+                  </div>
 
-                  {/* TAB 2: PILOTO & CNH */}
-                  {activeTab === 'cnh' && (
-                    <div className="space-y-4">
-                      <div className="p-3.5 rounded-xl bg-white/[0.025] border border-white/10 flex items-start gap-3">
-                        <ShieldCheck size={18} className="text-[#FF1717] shrink-0 mt-0.5" />
-                        <div className="text-xs text-white/70 leading-relaxed">
-                          Pilotos sem CNH válida ou menores de 21 anos podem agendar apenas <strong className="text-white">Visita ao Box</strong> ou sessões com instrutor Hot Lap.
-                        </div>
-                      </div>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Fechar edição"
+                    className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.08] flex items-center justify-center text-white/65 hover:text-white transition-colors cursor-pointer shrink-0"
+                  >
+                    <X size={17} />
+                  </button>
+                </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="sm:col-span-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-medium text-white/70">
-                              Número da CNH
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setCnhNumero('52798802310')}
-                              className="text-[10px] font-mono text-[#FF1717] hover:underline cursor-pointer"
-                            >
-                              Usar CNH Teste
-                            </button>
-                          </div>
-                          <input
-                            type="text"
-                            maxLength={11}
-                            placeholder="11 dígitos (Módulo 11)"
-                            value={cnhNumero}
-                            onChange={(e) => setCnhNumero(e.target.value.replace(/\D/g, ''))}
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none font-mono"
+                {/* Abas em pill */}
+                <div className="bg-[#121622] p-1 rounded-full grid grid-cols-4 gap-1">
+                  {[
+                    { id: 'perfil', label: 'Dados Pessoais', icon: User },
+                    { id: 'cnh', label: 'CNH & Piloto', icon: ShieldCheck },
+                    { id: 'financeiro', label: 'ApexPay', icon: CreditCard },
+                    { id: 'seguranca', label: 'Segurança & Status', icon: Settings },
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setActiveTab(tab.id as DrawerTab)}
+                        className={`relative py-2 px-2 rounded-full text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                          isActive ? 'text-[#08090C]' : 'text-white/60 hover:text-white'
+                        }`}
+                      >
+                        {isActive && (
+                          <motion.span
+                            layoutId="admin-edit-drawer-tab"
+                            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                            className="absolute inset-0 rounded-full bg-white"
                           />
+                        )}
+                        <Icon size={13} className="relative z-10 shrink-0" />
+                        <span className="relative z-10 hidden sm:inline truncate">{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Corpo */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                {isLoading ? (
+                  <div className="h-64 flex items-center justify-center">
+                    <Loader2 className="animate-spin text-[#FF1717]" size={28} />
+                  </div>
+                ) : (
+                  <form id="edit-user-form" onSubmit={handleSave} className="space-y-4">
+                    {/* TAB 1: DADOS PESSOAIS */}
+                    {activeTab === 'perfil' && (
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            Nome completo
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              required
+                              value={nome}
+                              onChange={(e) => setNome(e.target.value)}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 transition-all"
+                            />
+                            <User
+                              size={15}
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40"
+                            />
+                          </div>
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-medium text-white/70 mb-1">
-                            Categoria
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            E-mail de contato
                           </label>
-                          <select
-                            value={cnhCategoria}
-                            onChange={(e) => setCnhCategoria(e.target.value)}
-                            className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none cursor-pointer"
-                          >
-                            <option value="B">B (Carros)</option>
-                            <option value="C">C (Carga)</option>
-                            <option value="D">D (Passageiros)</option>
-                            <option value="E">E (Especiais)</option>
-                          </select>
+                          <div className="relative">
+                            <input
+                              type="email"
+                              required
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 transition-all"
+                            />
+                            <Mail
+                              size={15}
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40"
+                            />
+                          </div>
                         </div>
-                      </div>
 
-                      <div>
-                        <label className="block text-[11px] font-medium text-white/70 mb-1">
-                          Data de Nascimento
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="date"
-                            value={dataNascimento}
-                            onChange={(e) => setDataNascimento(e.target.value)}
-                            className="w-full bg-white/5 border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 font-mono"
-                          />
-                          <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-                        </div>
-                        <p className="text-[10px] text-white/40 mt-1 pl-1">
-                          Exigência de 21 anos completos para condução esportiva em circuito internacional.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TAB 3: FINANCEIRO APEXPAY */}
-                  {activeTab === 'financeiro' && (
-                    <div className="space-y-4 font-mono text-xs">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
-                          <p className="text-white/40 text-[10px] uppercase">Saldo em Carteira</p>
-                          <p
-                            className={`text-lg font-bold mt-1 ${
-                              (user?.saldoCarteira || 0) < 0 ? 'text-rose-400' : 'text-emerald-400'
-                            }`}
-                          >
-                            {formatPrice(user?.saldoCarteira || 0)}
+                        <div>
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            Telefone / WhatsApp (com DDD)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="tel"
+                              placeholder="11987654321"
+                              value={telefone}
+                              onChange={(e) => setTelefone(e.target.value.replace(/\D/g, ''))}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 tabular-nums transition-all"
+                            />
+                            <Phone
+                              size={15}
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40"
+                            />
+                          </div>
+                          <p className="text-[11px] text-white/45 mt-1.5 px-1">
+                            Utilizado para código de verificação e avisos de reserva no WhatsApp.
                           </p>
                         </div>
-                        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10">
-                          <p className="text-white/40 text-[10px] uppercase">Total Depositado</p>
-                          <p className="text-lg font-bold text-white mt-1">
-                            {formatPrice(user?.totalDepositadoHistorico || 0)}
-                          </p>
+
+                        <div>
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            Endereço completo
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={endereco}
+                              onChange={(e) => setEndereco(e.target.value)}
+                              placeholder="Rua, número, cidade e estado"
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 transition-all"
+                            />
+                            <MapPin
+                              size={15}
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40"
+                            />
+                          </div>
                         </div>
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-[11px] font-medium font-sans text-white/70 mb-1">
-                          Situação Financeira ApexPay
-                        </label>
-                        <select
-                          value={statusFinanceiro}
-                          onChange={(e) => setStatusFinanceiro(e.target.value as any)}
-                          className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none cursor-pointer"
-                        >
-                          <option value="REGULAR">REGULAR (Em dia com a plataforma)</option>
-                          <option value="INADIMPLENTE">INADIMPLENTE (Bloqueado por pendência financeira)</option>
-                        </select>
-                      </div>
+                    {/* TAB 2: CNH & PILOTO */}
+                    {activeTab === 'cnh' && (
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-2xl bg-[#121622] flex items-start gap-3">
+                          <ShieldCheck size={18} className="text-[#FF1717] shrink-0 mt-0.5" />
+                          <div className="text-xs text-white/65 leading-relaxed">
+                            Pilotos sem CNH válida ou menores de 21 anos podem agendar apenas{' '}
+                            <strong className="text-white">Visita ao Box</strong> ou{' '}
+                            <strong className="text-white">Fast Lap</strong> como passageiro.
+                          </div>
+                        </div>
 
-                      {/* Histórico Recente de Sessões */}
-                      <div className="pt-2">
-                        <p className="text-[11px] font-sans font-medium text-white/80 mb-2">
-                          Sessões Realizadas pelo Piloto
-                        </p>
-                        {(!user?.historicoSessoes || user.historicoSessoes.length === 0) ? (
-                          <p className="text-[11px] text-white/40 py-2">Nenhuma sessão registrada para este piloto.</p>
-                        ) : (
-                          <div className="space-y-2 max-h-48 overflow-y-auto">
-                            {user.historicoSessoes.map((s) => (
-                              <div
-                                key={s.id}
-                                className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-between text-[11px]"
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <div className="flex items-center justify-between mb-1.5 px-1">
+                              <label className="text-xs font-medium text-white/60">
+                                Número da CNH
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => setCnhNumero('52798802310')}
+                                className="text-xs font-medium text-[#FF1717] hover:underline cursor-pointer"
                               >
-                                <div>
-                                  <p className="text-white font-medium">{s.automovel}</p>
-                                  <p className="text-white/45 text-[10px]">{s.circuito} · {s.tipoServico}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-white font-bold">{formatPrice(s.valorFinal)}</p>
-                                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-white/10 text-white/80">
-                                    {s.status}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
+                                Usar CNH teste
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              maxLength={11}
+                              placeholder="11 dígitos"
+                              value={cnhNumero}
+                              onChange={(e) => setCnhNumero(e.target.value.replace(/\D/g, ''))}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 tabular-nums transition-all"
+                            />
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
 
-                  {/* TAB 4: SEGURANÇA & STATUS DA CONTA */}
-                  {activeTab === 'seguranca' && (
-                    <div className="space-y-4">
-                      {isAdmin ? (
-                        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
-                          <div className="flex items-center gap-2 text-amber-300 font-bold text-xs uppercase font-mono">
-                            <Lock size={15} />
-                            Conta de Administrador Protegida
-                          </div>
-                          <p className="text-xs text-amber-200/80 leading-relaxed">
-                            Esta conta executiva é mantida pública para fins de demonstração e homologação.
-                            Por regras de segurança da plataforma, a senha de acesso, e-mail e privilégios
-                            são protegidos contra modificações e exclusão.
-                          </p>
-                        </div>
-                      ) : (
-                        <>
                           <div>
-                            <label className="block text-[11px] font-medium text-white/70 mb-1">
-                              Status da Conta no Race Control
+                            <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                              Categoria
                             </label>
                             <select
-                              value={statusConta}
-                              onChange={(e) => setStatusConta(e.target.value as any)}
-                              className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none cursor-pointer"
+                              value={cnhCategoria}
+                              onChange={(e) => setCnhCategoria(e.target.value)}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-3.5 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 cursor-pointer transition-all"
                             >
-                              <option value="ATIVO">ATIVO (Permissão total de acesso e agendamentos)</option>
-                              <option value="BLOQUEADO_RESERVAS">BLOQUEADO_RESERVAS (Acesso mantido, sem novas sessões)</option>
-                              <option value="SUSPENSO">SUSPENSO (Conta desativada por infração de pista)</option>
+                              <option value="B">B (Carros)</option>
+                              <option value="C">C (Carga)</option>
+                              <option value="D">D (Passageiros)</option>
+                              <option value="E">E (Especiais)</option>
                             </select>
                           </div>
+                        </div>
 
-                          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
-                            <label className="block text-[11px] font-medium text-white/80">
-                              Redefinir Senha do Piloto (Direta)
-                            </label>
+                        <div>
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            Data de nascimento
+                          </label>
+                          <div className="relative">
                             <input
-                              type="password"
-                              placeholder="Digite uma nova senha (mín. 6 caracteres)"
-                              value={novaSenha}
-                              onChange={(e) => setNovaSenha(e.target.value)}
-                              className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2 rounded-xl text-xs text-white outline-none"
+                              type="date"
+                              value={dataNascimento}
+                              onChange={(e) => setDataNascimento(e.target.value)}
+                              className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 tabular-nums transition-all"
                             />
-                            <p className="text-[10px] text-white/40">
-                              Deixe em branco para manter a senha atual do piloto.
-                            </p>
+                            <Calendar
+                              size={15}
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40"
+                            />
                           </div>
+                          <p className="text-[11px] text-white/45 mt-1.5 px-1">
+                            Idade mínima de 21 anos para pilotar em circuito.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
-                          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2.5">
-                            <h4 className="text-xs font-semibold text-white flex items-center gap-1.5">
-                              <MessageCircle size={14} className="text-[#25D366]" />
-                              Disparo de Código via WhatsApp
-                            </h4>
-                            <p className="text-[11px] text-white/60 leading-relaxed">
-                              Dispara um código de segurança de 6 dígitos diretamente para o WhatsApp do piloto ({telefone || 'Sem telefone'}).
-                            </p>
-                            <button
-                              type="button"
-                              onClick={handleSendWhatsAppReset}
-                              className="px-3.5 py-2 rounded-full bg-[#25D366]/15 hover:bg-[#25D366]/30 border border-[#25D366]/40 text-[#25D366] text-xs font-medium cursor-pointer transition-colors"
+                    {/* TAB 3: FINANCEIRO APEXPAY */}
+                    {activeTab === 'financeiro' && (
+                      <div className="space-y-4 text-xs">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-4 rounded-2xl bg-[#121622]">
+                            <p className="text-white/45 text-xs">Saldo em carteira</p>
+                            <p
+                              className={`text-xl font-semibold mt-1 tabular-nums ${
+                                (user?.saldoCarteira || 0) < 0 ? 'text-rose-300' : 'text-emerald-300'
+                              }`}
                             >
-                              Disparar Recuperação WhatsApp
-                            </button>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-1.5">
-                            <div className="flex items-center gap-2 text-rose-300 font-semibold text-xs">
-                              <AlertTriangle size={14} />
-                              Zona de Risco Race Control
-                            </div>
-                            <p className="text-[11px] text-rose-200/70 leading-relaxed">
-                              Alterar o status para <strong className="text-rose-200">SUSPENSO</strong> cancelará imediatamente todas as sessões pendentes e impedirá login do piloto.
+                              {formatPrice(user?.saldoCarteira || 0)}
                             </p>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </form>
-              )}
-            </div>
+                          <div className="p-4 rounded-2xl bg-[#121622]">
+                            <p className="text-white/45 text-xs">Total depositado</p>
+                            <p className="text-xl font-semibold text-white mt-1 tabular-nums">
+                              {formatPrice(user?.totalDepositadoHistorico || 0)}
+                            </p>
+                          </div>
+                        </div>
 
-            {/* Footer Sticky */}
-            <div className="p-4 sm:p-6 border-t border-white/10 bg-[#0A0D14] flex items-center justify-between gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-5 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                form="edit-user-form"
-                disabled={isSaving || isLoading}
-                className="relative px-6 py-2.5 rounded-full bg-[#FF1717] hover:bg-[#E10600] text-white text-xs font-semibold tracking-wide transition-all shadow-lg flex items-center gap-2 cursor-pointer"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="animate-spin" size={14} />
-                    <span>Salvando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={14} />
-                    <span>Salvar Alterações</span>
-                  </>
+                        <div>
+                          <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                            Situação financeira ApexPay
+                          </label>
+                          <select
+                            value={statusFinanceiro}
+                            onChange={(e) => setStatusFinanceiro(e.target.value as any)}
+                            className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 cursor-pointer transition-all"
+                          >
+                            <option value="REGULAR">Regular (em dia com a plataforma)</option>
+                            <option value="INADIMPLENTE">Inadimplente (bloqueado por pendência)</option>
+                          </select>
+                        </div>
+
+                        <div className="pt-1 space-y-2.5">
+                          <p className="text-xs font-medium text-white/80 px-1">
+                            Histórico de sessões do piloto
+                          </p>
+                          {!user?.historicoSessoes || user.historicoSessoes.length === 0 ? (
+                            <div className="p-4 rounded-2xl bg-[#121622] text-xs text-white/45">
+                              Nenhuma sessão registrada para este piloto.
+                            </div>
+                          ) : (
+                            <div className="space-y-2 max-h-56 overflow-y-auto pr-1 custom-scrollbar">
+                              {user.historicoSessoes.map((s) => (
+                                <div
+                                  key={s.id}
+                                  className="p-3.5 rounded-2xl bg-[#121622] flex items-center justify-between gap-3 text-xs"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-white font-medium truncate">{s.automovel}</p>
+                                    <p className="text-white/50 text-[11px] truncate mt-0.5">
+                                      {s.circuito} · {s.tipoServico}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-white font-semibold tabular-nums">
+                                      {formatPrice(s.valorFinal)}
+                                    </p>
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0D1017] text-white/70 inline-block mt-0.5">
+                                      {s.status}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* TAB 4: SEGURANÇA & STATUS DA CONTA */}
+                    {activeTab === 'seguranca' && (
+                      <div className="space-y-4">
+                        {isAdmin ? (
+                          <div className="p-4 rounded-2xl bg-amber-500/12 space-y-2">
+                            <div className="flex items-center gap-2 text-amber-300 font-medium text-xs">
+                              <Lock size={15} />
+                              <span>Conta de Administrador Protegida</span>
+                            </div>
+                            <p className="text-xs text-amber-200/80 leading-relaxed">
+                              Por segurança, a senha de acesso, e-mail e privilégios desta conta administrativa são protegidos contra modificações ou exclusão.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
+                                Status da conta
+                              </label>
+                              <select
+                                value={statusConta}
+                                onChange={(e) => setStatusConta(e.target.value as any)}
+                                className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 cursor-pointer transition-all"
+                              >
+                                <option value="ATIVO">Ativo (acesso e reservas liberados)</option>
+                                <option value="BLOQUEADO_RESERVAS">
+                                  Bloqueado para reservas (apenas consulta)
+                                </option>
+                                <option value="SUSPENSO">Suspenso (conta desativada)</option>
+                              </select>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-[#121622] space-y-2.5">
+                              <label className="block text-xs font-medium text-white/80">
+                                Definir nova senha para o piloto
+                              </label>
+                              <input
+                                type="password"
+                                placeholder="Mínimo 6 caracteres (opcional)"
+                                value={novaSenha}
+                                onChange={(e) => setNovaSenha(e.target.value)}
+                                className="w-full bg-[#0D1017] focus:bg-[#171C2B] px-4 py-3 rounded-xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                              />
+                              <p className="text-[11px] text-white/45">
+                                Deixe em branco para manter a senha atual.
+                              </p>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-[#121622] space-y-2.5">
+                              <h4 className="text-xs font-medium text-white flex items-center gap-2">
+                                <MessageCircle size={14} className="text-emerald-400" />
+                                <span>Enviar código de recuperação via WhatsApp</span>
+                              </h4>
+                              <p className="text-xs text-white/55 leading-relaxed">
+                                Envia um código de verificação para o número cadastrado (
+                                {telefone || 'sem telefone cadastrado'}).
+                              </p>
+                              <button
+                                type="button"
+                                onClick={handleSendWhatsAppReset}
+                                className="px-4 py-2 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-medium cursor-pointer transition-colors"
+                              >
+                                Enviar código no WhatsApp
+                              </button>
+                            </div>
+
+                            <div className="p-4 rounded-2xl bg-rose-500/10 space-y-1.5">
+                              <div className="flex items-center gap-2 text-rose-300 font-medium text-xs">
+                                <AlertTriangle size={14} />
+                                <span>Atenção ao suspender</span>
+                              </div>
+                              <p className="text-xs text-rose-200/75 leading-relaxed">
+                                Alterar o status para <strong>Suspenso</strong> cancela sessões pendentes e impede o acesso do piloto.
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </form>
                 )}
-              </button>
+              </div>
+
+              {/* Rodapé */}
+              <div className="px-6 py-4 bg-[#0B0E14] flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-5 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  form="edit-user-form"
+                  disabled={isSaving || isLoading}
+                  className="px-6 py-2.5 rounded-full bg-white hover:bg-white/90 disabled:opacity-50 text-[#08090C] text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="animate-spin" size={14} />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} />
+                      <span>Salvar alterações</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-          </motion.div>
+          </motion.aside>
         </div>
       )}
     </AnimatePresence>

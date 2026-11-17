@@ -168,17 +168,11 @@ export default function Header({ transparent = false }: HeaderProps) {
   const linkClass = "text-sm font-medium tracking-normal text-white/70 hover:text-white transition-colors duration-200 whitespace-nowrap";
 
   const isNavActive = (path: string) => {
-    if (path === '/admin?tab=pilotos') {
-      return (
-        (location.pathname === '/admin' && location.search.includes('pilotos')) ||
-        location.pathname === '/admin/usuarios'
-      );
-    }
-    if (path === '/admin') {
-      return location.pathname === '/admin' && !location.search.includes('pilotos');
-    }
     if (path === '/') {
       return location.pathname === '/';
+    }
+    if (path === '/admin') {
+      return location.pathname === '/admin';
     }
     return location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
   };
@@ -194,14 +188,14 @@ export default function Header({ transparent = false }: HeaderProps) {
       }`.trim();
     };
 
-    // --- MODO 1: ADMINISTRADOR EXECUTIVO (RACE CONTROL) ---
+    // --- MODO 1: ADMINISTRADOR EXECUTIVO ---
     if (user?.role === 'ADMIN') {
       return (
         <>
           <Link to="/admin" className={itemCls('/admin')}>Painel Executivo</Link>
-          <Link to="/admin?tab=pilotos" className={itemCls('/admin?tab=pilotos')}>Gestão de Pilotos</Link>
-          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões & Paddock</Link>
-          <Link to="/cars" className={itemCls('/cars')}>Supercarros</Link>
+          <Link to="/admin/usuarios" className={itemCls('/admin/usuarios')}>Gestão de Pilotos</Link>
+          <Link to="/pedidos" className={itemCls('/pedidos')}>Sessões</Link>
+          <Link to="/cars" className={itemCls('/cars')}>Frota</Link>
         </>
       );
     }
@@ -214,6 +208,7 @@ export default function Header({ transparent = false }: HeaderProps) {
           <Link to="/pistas" className={itemCls('/pistas')}>Pistas</Link>
           <Link to="/cars" className={itemCls('/cars')}>Frota</Link>
           <Link to="/meus-alugueis" className={itemCls('/meus-alugueis')}>Minhas Sessões</Link>
+          <Link to="/apexpay" className={itemCls('/apexpay')}>ApexPay</Link>
         </>
       );
     }
@@ -297,11 +292,6 @@ export default function Header({ transparent = false }: HeaderProps) {
                 <span className="text-xl font-normal tracking-[-0.03em] text-white font-sans lowercase leading-none -translate-y-0.5">
                   apex
                 </span>
-                {user?.role === 'CLIENTE' ? (
-                  <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/60 font-mono text-[9px] uppercase tracking-wide ml-1">
-                    Piloto
-                  </span>
-                ) : null}
               </Link>
             ) : (
               <div 
@@ -330,37 +320,37 @@ export default function Header({ transparent = false }: HeaderProps) {
             <div className="hidden md:flex items-center gap-3 font-sans relative z-10">
               {user ? (
                 user.role === 'ADMIN' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 font-sans">
                     <button 
                       type="button"
                       onClick={() => setProfileModalOpen(true)}
-                      className="w-9 h-9 rounded-full bg-[#0E121A] hover:bg-white/10 border border-[#FF1717]/40 hover:border-[#FF1717] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
+                      className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.1] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
                       title="Abrir perfil de Administrador"
                       aria-label="Perfil de Administrador"
                     >
                       <Shield size={15} className="text-[#FF1717]" />
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#FF1717] border border-black" />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#FF1717] ring-2 ring-[#08090C]" />
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2.5 font-sans">
                     <Link
                       to="/apexpay"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FF1717]/10 hover:bg-[#FF1717]/20 border border-[#FF1717]/25 text-white text-xs font-mono transition-colors"
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-all shadow-md shadow-[#FF1717]/20 hover:shadow-[#FF1717]/35 active:scale-95"
                       title="Acessar carteira e saldo ApexPay"
                     >
-                      <Wallet size={12} className="text-[#FF1717]" />
+                      <Wallet size={14} className="text-white" />
                       <span>ApexPay</span>
                     </Link>
                     <button
                       type="button"
                       onClick={() => setProfileModalOpen(true)}
-                      className="w-9 h-9 rounded-full bg-[#0E121A] hover:bg-white/10 border border-white/20 hover:border-[#FF1717] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
-                      title="Abrir perfil do piloto"
-                      aria-label="Perfil do piloto"
+                      className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.1] flex items-center justify-center text-white transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer relative group"
+                      title="Minha conta e configurações"
+                      aria-label="Minha conta"
                     >
-                      <User size={15} className="text-white/80 group-hover:text-[#FF1717] transition-colors" />
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-black" />
+                      <User size={15} className="text-white/85 group-hover:text-white transition-colors" />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-[#08090C]" />
                     </button>
                   </div>
                 )
@@ -374,7 +364,7 @@ export default function Header({ transparent = false }: HeaderProps) {
                   </button>
                   <button 
                     onClick={handleRegisterClick} 
-                    className="bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold uppercase tracking-wider px-4 py-2 rounded-full transition-all cursor-pointer shadow-md shadow-[#FF1717]/25 hover:shadow-[#FF1717]/40 active:scale-95"
+                    className="bg-[#FF1717] hover:bg-[#e01414] text-white text-sm font-medium px-4 py-2 rounded-full transition-all cursor-pointer shadow-md shadow-[#FF1717]/20 hover:shadow-[#FF1717]/35 active:scale-95"
                   >
                     Cadastrar-se
                   </button>
@@ -397,31 +387,40 @@ export default function Header({ transparent = false }: HeaderProps) {
 
           {/* Mobile Dropdown */}
           {mobileMenuOpen && (
-            <div className="md:hidden mt-4 pb-6 pt-2 border-t border-white/10 flex flex-col gap-4 font-sans">
+            <div className="md:hidden mt-3 pb-6 pt-3 rounded-2xl bg-[#0D1017] p-4 flex flex-col gap-4 font-sans shadow-xl">
               {renderNavLinks("text-sm text-white/80 hover:text-white py-1 font-medium")}
-              <div className="pt-4 border-t border-white/10 flex flex-col gap-2">
+              <div className="pt-3 flex flex-col gap-2.5">
                 {user ? (
                   <>
                     <div className="flex items-center justify-between text-xs text-white/60">
-                      <span>{user.email}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        user.role === 'ADMIN' 
-                          ? 'bg-[#FF1717]/20 text-[#FF1717] border border-[#FF1717]/30' 
-                          : 'bg-white/10 text-white/70'
-                      }`}>
-                        {user.role === 'ADMIN' ? 'RACE CONTROL' : 'PILOTO'}
-                      </span>
+                      <span className="truncate">{user.email}</span>
+                      {user.role === 'ADMIN' && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FF1717]/15 text-[#FF1717]">
+                          Admin
+                        </span>
+                      )}
                     </div>
                     {user.role === 'CLIENTE' && (
                       <Link
                         to="/apexpay"
                         onClick={() => setMobileMenuOpen(false)}
-                        className="py-2 px-3 rounded-xl bg-white/5 border border-white/10 text-xs text-white flex items-center justify-between"
+                        className="py-2.5 px-3.5 rounded-2xl bg-[#FF1717] hover:bg-[#e01414] text-xs font-semibold text-white flex items-center justify-between transition-colors"
                       >
-                        <span className="flex items-center gap-1.5"><Wallet size={13} className="text-[#FF1717]" /> Carteira ApexPay</span>
-                        <span className="text-white/40 text-[10px]">Acessar →</span>
+                        <span className="flex items-center gap-2"><Wallet size={14} className="text-white" /> Carteira ApexPay</span>
+                        <span className="text-white/80 text-xs">Acessar →</span>
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        setProfileModalOpen(true);
+                      }}
+                      className="py-2.5 px-3.5 rounded-2xl bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white flex items-center justify-between transition-colors cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2"><User size={14} className="text-white/75" /> Minha conta e senha</span>
+                      <span className="text-white/40 text-xs">Abrir →</span>
+                    </button>
                     <button 
                       onClick={() => {
                         setMobileMenuOpen(false);

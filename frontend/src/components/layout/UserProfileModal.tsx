@@ -1,25 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
-  X,
-  User,
-  Shield,
-  ShieldAlert,
-  Lock,
-  LogOut,
+  ArrowRight,
+  Calendar,
   CheckCircle2,
-  Loader2,
-  KeyRound,
-  MessageCircle,
   Eye,
   EyeOff,
+  KeyRound,
+  Lock,
+  LogOut,
+  MapPin,
+  MessageSquare,
+  Phone,
+  Shield,
+  User,
   Wallet,
+  X,
 } from 'lucide-react';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useCurrencyStore } from '@/store/useCurrencyStore';
 import { api } from '@/services/api';
-import { toast } from '@/store/useToastStore';
-import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/store/useAuthStore';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -27,10 +28,10 @@ interface UserProfileModalProps {
 }
 
 interface UserProfileData {
-  id?: number;
-  nome?: string;
-  email?: string;
-  role?: string;
+  id: number;
+  nome: string;
+  email: string;
+  role: 'ADMIN' | 'CLIENTE';
   telefone?: string;
   endereco?: string;
   cpf?: string;
@@ -43,563 +44,762 @@ interface UserProfileData {
   avatarUrl?: string;
 }
 
+type ActiveTab = 'profile' | 'security';
+type PasswordMethod = 'current' | 'whatsapp';
+
+function formatPhone(value?: string): string {
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function maskCpf(cpf?: string): string {
+  if (!cpf) return 'Não informado';
+  const digits = cpf.replace(/\D/g, '');
+  if (digits.length !== 11) return cpf;
+  return `•••.${digits.slice(3, 6)}.•••-${digits.slice(9, 11)}`;
+}
+
+function maskDocument(doc?: string): string {
+  if (!doc) return 'Não informado';
+  const clean = doc.trim();
+  if (clean.length <= 4) return clean;
+  return `${'•'.repeat(Math.max(clean.length - 4, 2))}${clean.slice(-4)}`;
+}
+
+function formatCurrency(value?: number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(Number(value ?? 0));
+}
+
+function getInitials(name?: string, email?: string): string {
+  const source = (name || email || 'AX').trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+  return source.slice(0, 2).toUpperCase();
+}
+
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
-  const { formatPrice } = useCurrencyStore();
-  const [loading, setLoading] = useState(false);
+  const { user: authUser, logout } = useAuthStore();
+
   const [profile, setProfile] = useState<UserProfileData | null>(null);
-  const [activeTab, setActiveTab] = useState<'dossie' | 'senha'>('dossie');
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('profile');
 
-  // Estados de edição de dados (Cliente)
-  const [nomeEdit, setNomeEdit] = useState('');
-  const [telefoneEdit, setTelefoneEdit] = useState('');
-  const [enderecoEdit, setEnderecoEdit] = useState('');
-  const [savingData, setSavingData] = useState(false);
+  // Dados pessoais
+  const [nome, setNome] = useState('');
+  const [telefone, setTelefone] = useState('');
+  const [endereco, setEndereco] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
-  // Estados de alteração segura de senha
-  const [metodoVerificacao, setMetodoVerificacao] = useState<'senha_atual' | 'whatsapp'>('senha_atual');
+  // Segurança / Senha
+  const [passwordMethod, setPasswordMethod] = useState<PasswordMethod>('current');
   const [senhaAtual, setSenhaAtual] = useState('');
   const [codigoWhatsApp, setCodigoWhatsApp] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [enviandoCodigo, setEnviandoCodigo] = useState(false);
-  const [codigoEnviado, setCodigoEnviado] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [requestingCode, setRequestingCode] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
 
-  const isAdmin = user?.role === 'ADMIN';
+  // Feedback
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const carregarPerfil = () => {
-    if (!user) return;
-    setLoading(true);
-    api
-      .get('/api/usuarios/me')
-      .then((res) => {
-        if (res.data) {
-          setProfile(res.data);
-          setNomeEdit(res.data.nome || '');
-          setTelefoneEdit(res.data.telefone || '');
-          setEnderecoEdit(res.data.endereco || '');
-        }
-      })
-      .catch(() => {
-        setProfile({
-          email: user.email,
-          role: user.role,
-          nome: isAdmin ? 'Administrador Apex' : user.email.split('@')[0],
-        });
-        setNomeEdit(isAdmin ? 'Administrador Apex' : user.email.split('@')[0]);
-      })
-      .finally(() => setLoading(false));
-  };
+  const isAdmin = (profile?.role ?? authUser?.role) === 'ADMIN';
 
   useEffect(() => {
-    if (isOpen) {
-      carregarPerfil();
-      setActiveTab('dossie');
-      setSenhaAtual('');
-      setCodigoWhatsApp('');
-      setNovaSenha('');
-      setConfirmarSenha('');
-      setCodigoEnviado(false);
-    }
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setFeedback(null);
+    setActiveTab('profile');
+    setSenhaAtual('');
+    setCodigoWhatsApp('');
+    setNovaSenha('');
+    setConfirmarSenha('');
+    setCodeSent(false);
+    setLoading(true);
+
+    api
+      .get<UserProfileData>('/api/usuarios/me')
+      .then((res) => {
+        if (cancelled) return;
+        const data = res.data;
+        setProfile(data);
+        setNome(data.nome || '');
+        setTelefone(formatPhone(data.telefone));
+        setEndereco(data.endereco || '');
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setFeedback({
+          type: 'error',
+          message: err?.response?.data?.message || 'Não foi possível carregar os dados da conta.',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
+
+  const initials = useMemo(
+    () => getInitials(profile?.nome, profile?.email || authUser?.email),
+    [profile?.nome, profile?.email, authUser?.email]
+  );
+
+  const handleNavigate = (path: string) => {
+    onClose();
+    navigate(path);
+  };
 
   const handleLogout = () => {
     logout();
     onClose();
-    toast.info('Sessão encerrada com sucesso.');
-    navigate('/login');
+    navigate('/');
   };
 
-  // Salva dados cadastrais (Nome, Telefone, Endereço)
-  const handleSaveData = async (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAdmin) {
-      toast.error('Alterações de dados cadastrais são restritas para a conta Administrador.');
+    if (isAdmin) return;
+
+    setFeedback(null);
+    const trimmedName = nome.trim();
+    const digitsPhone = telefone.replace(/\D/g, '');
+
+    if (trimmedName.length < 2) {
+      setFeedback({ type: 'error', message: 'Informe seu nome completo.' });
       return;
     }
 
-    if (!nomeEdit.trim() || nomeEdit.trim().length < 3) {
-      toast.error('O nome deve ter no mínimo 3 caracteres.');
+    if (digitsPhone.length > 0 && digitsPhone.length < 10) {
+      setFeedback({ type: 'error', message: 'Informe um número de telefone válido com DDD.' });
       return;
     }
 
-    setSavingData(true);
+    setSavingProfile(true);
     try {
-      await api.put('/api/usuarios/me', {
-        nome: nomeEdit.trim(),
-        telefone: telefoneEdit.replace(/\D/g, ''),
-        endereco: enderecoEdit.trim(),
+      const res = await api.put<UserProfileData>('/api/usuarios/me', {
+        nome: trimmedName,
+        telefone: digitsPhone,
+        endereco: endereco.trim(),
       });
-      toast.success('Dossiê do piloto atualizado com sucesso!');
-      carregarPerfil();
+      setProfile((prev) => ({ ...(prev ?? ({} as UserProfileData)), ...res.data }));
+      setFeedback({ type: 'success', message: 'Dados atualizados com sucesso.' });
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Falha ao salvar dados do perfil.');
+      setFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Erro ao atualizar seus dados.',
+      });
     } finally {
-      setSavingData(false);
+      setSavingProfile(false);
     }
   };
 
-  // Solicita envio de código OTP via WhatsApp para autorizar troca de senha
-  const handleSolicitarCodigoWhatsApp = async () => {
-    const tel = profile?.telefone || telefoneEdit;
-    if (!tel || tel.replace(/\D/g, '').length < 10) {
-      toast.error('Número de WhatsApp inválido no cadastro. Atualize seu telefone primeiro.');
+  const handleRequestWhatsAppCode = async () => {
+    if (isAdmin) return;
+    setFeedback(null);
+
+    const digitsPhone = (telefone || profile?.telefone || '').replace(/\D/g, '');
+    if (digitsPhone.length < 10) {
+      setFeedback({
+        type: 'error',
+        message: 'Cadastre um telefone válido na aba de dados antes de solicitar o código.',
+      });
       return;
     }
-    setEnviandoCodigo(true);
+
+    setRequestingCode(true);
     try {
       await api.post('/api/usuarios/recuperar-senha-whatsapp/solicitar', {
-        telefone: tel.replace(/\D/g, ''),
+        telefone: digitsPhone,
       });
-      setCodigoEnviado(true);
-      toast.success('Código de 6 dígitos enviado para seu WhatsApp! Digite-o para verificar.');
+      setCodeSent(true);
+      setFeedback({
+        type: 'success',
+        message: 'Código de verificação enviado para o seu WhatsApp cadastrado.',
+      });
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Falha ao enviar código pelo WhatsApp.');
+      setFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Não foi possível enviar o código via WhatsApp.',
+      });
     } finally {
-      setEnviandoCodigo(false);
+      setRequestingCode(false);
     }
   };
 
-  // Salva nova senha com verificação obrigatória (Senha Atual OU Código WhatsApp)
-  const handleSavePassword = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAdmin) {
-      toast.error('A senha da conta de Administrador é protegida e não pode ser alterada.');
+    if (isAdmin) return;
+    setFeedback(null);
+
+    if (passwordMethod === 'current' && !senhaAtual.trim()) {
+      setFeedback({ type: 'error', message: 'Digite sua senha atual para continuar.' });
       return;
     }
 
-    if (metodoVerificacao === 'senha_atual' && !senhaAtual) {
-      toast.error('Digite sua Senha Atual para verificar sua identidade.');
+    if (passwordMethod === 'whatsapp' && codigoWhatsApp.trim().length < 4) {
+      setFeedback({ type: 'error', message: 'Informe o código recebido no WhatsApp.' });
       return;
     }
 
-    if (metodoVerificacao === 'whatsapp' && (!codigoWhatsApp || codigoWhatsApp.trim().length < 4)) {
-      toast.error('Digite o Código de Verificação recebido no WhatsApp.');
-      return;
-    }
-
-    if (!novaSenha || novaSenha.length < 6) {
-      toast.error('A nova senha deve ter no mínimo 6 caracteres.');
+    if (novaSenha.length < 6) {
+      setFeedback({ type: 'error', message: 'A nova senha deve ter pelo menos 6 caracteres.' });
       return;
     }
 
     if (novaSenha !== confirmarSenha) {
-      toast.error('A confirmação não coincide com a nova senha.');
+      setFeedback({ type: 'error', message: 'As novas senhas não coincidem.' });
       return;
     }
 
     setSavingPassword(true);
     try {
       await api.put('/api/usuarios/me/senha', {
-        senhaAtual: metodoVerificacao === 'senha_atual' ? senhaAtual : undefined,
-        codigoWhatsApp: metodoVerificacao === 'whatsapp' ? codigoWhatsApp.trim() : undefined,
-        novaSenha: novaSenha.trim(),
+        ...(passwordMethod === 'current'
+          ? { senhaAtual: senhaAtual.trim() }
+          : { codigoWhatsApp: codigoWhatsApp.trim() }),
+        novaSenha,
       });
-
-      toast.success('Senha alterada com sucesso mediante validação de segurança!');
       setSenhaAtual('');
       setCodigoWhatsApp('');
       setNovaSenha('');
       setConfirmarSenha('');
-      setCodigoEnviado(false);
-      setActiveTab('dossie');
+      setCodeSent(false);
+      setFeedback({ type: 'success', message: 'Senha alterada com sucesso.' });
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Falha ao alterar senha.');
+      setFeedback({
+        type: 'error',
+        message: err?.response?.data?.message || 'Não foi possível alterar a senha.',
+      });
     } finally {
       setSavingPassword(false);
     }
   };
 
-  const maskCPFDisplay = (cpf?: string) => {
-    if (!cpf) return 'Não informado';
-    const c = cpf.replace(/\D/g, '');
-    if (c.length !== 11) return cpf;
-    return `***.${c.slice(3, 6)}.***-${c.slice(9)}`;
-  };
+  if (typeof document === 'undefined') return null;
 
-  if (!isOpen) return null;
-
-  return (
+  return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="absolute inset-0 bg-black/85 backdrop-blur-md"
-        />
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end font-sans">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
+          />
 
-        {/* Modal Container */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-          className="relative z-10 w-full max-w-[460px] max-h-[90vh] rounded-[28px] bg-[#0A0D14]/95 border border-white/15 p-5 sm:p-6 shadow-[0_25px_80px_rgba(0,0,0,0.95),0_0_40px_rgba(255,23,23,0.12)] text-white flex flex-col justify-between overflow-hidden"
-        >
-          {/* Brilho radial no topo */}
-          <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-32 bg-[#FF1717]/15 blur-3xl pointer-events-none rounded-full" />
-
-          {/* Cabeçalho */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10 relative z-10 shrink-0">
-            <div className="flex items-center gap-2">
-              {isAdmin ? (
-                <Shield size={16} className="text-[#FF1717]" />
-              ) : (
-                <User size={16} className="text-[#FF1717]" />
-              )}
-              <h2 className="text-sm font-semibold tracking-wider uppercase text-white/90">
-                {isAdmin ? 'Acesso Administrativo' : 'Dossiê do Piloto'}
-              </h2>
-            </div>
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
-            >
-              <X size={15} />
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-2 text-white/60">
-              <Loader2 className="animate-spin text-[#FF1717]" size={24} />
-              <span className="text-xs">Carregando credenciais...</span>
-            </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-0.5 my-3 space-y-4">
-              {/* Card Resumo do Piloto */}
-              <div className="flex items-center gap-3.5 p-3 rounded-2xl bg-white/[0.03] border border-white/10">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#FF1717] via-rose-600 to-black p-[2px] shrink-0">
-                  <div className="w-full h-full rounded-full bg-[#0E121A] flex items-center justify-center overflow-hidden">
-                    {isAdmin ? (
-                      <Shield size={24} className="text-[#FF1717]" />
-                    ) : (
-                      <User size={24} className="text-white/80" />
-                    )}
+          {/* Slide-over panel */}
+          <motion.aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Minha conta"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+            className="relative z-10 w-full max-w-[460px] h-full sm:p-3 flex flex-col"
+          >
+            <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
+              {/* Top header */}
+              <div className="px-6 pt-6 pb-5 flex items-start justify-between gap-4 shrink-0">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 text-sm font-semibold ${
+                      isAdmin
+                        ? 'bg-[#FF1717]/15 text-[#FF1717]'
+                        : 'bg-[#121622] text-white'
+                    }`}
+                  >
+                    {isAdmin ? <Shield size={20} /> : initials}
                   </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-white truncate">
-                    {profile?.nome || (isAdmin ? 'Administrador Apex' : 'Piloto Apex')}
-                  </h3>
-                  <p className="text-xs text-white/50 truncate">{user?.email}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {isAdmin ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-950/70 border border-red-500/30 text-red-300 text-[9px] font-mono font-bold uppercase">
-                        <Lock size={9} className="text-[#FF1717]" /> Master Protegido
-                      </span>
-                    ) : (
-                      <>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold uppercase">
-                          <CheckCircle2 size={9} /> Piloto Ativo
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-medium text-white truncate">
+                        {profile?.nome || 'Minha conta'}
+                      </h2>
+                      {isAdmin && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#FF1717]/15 text-[#FF1717] text-[11px] font-medium shrink-0">
+                          Admin
                         </span>
-                        {profile?.saldoCarteira !== undefined && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-white/70">
-                            <Wallet size={10} className="text-[#FF1717]" />
-                            {formatPrice(profile.saldoCarteira)}
-                          </span>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </div>
+                    <p className="text-xs text-white/50 truncate mt-0.5">
+                      {profile?.email || authUser?.email}
+                    </p>
                   </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Fechar painel da conta"
+                  className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white/60 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                >
+                  <X size={17} />
+                </button>
               </div>
 
-              {/* Seletor de Abas (Dossiê vs Segurança & Senha) - Somente para Cliente */}
-              {!isAdmin && (
-                <div className="flex rounded-full bg-white/5 p-1 border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('dossie')}
-                    className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-                      activeTab === 'dossie'
-                        ? 'bg-white text-[#08090C] font-semibold shadow-sm'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    Dossiê Cadastral
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('senha')}
-                    className={`flex-1 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
-                      activeTab === 'senha'
-                        ? 'bg-white text-[#08090C] font-semibold shadow-sm'
-                        : 'text-white/60 hover:text-white'
-                    }`}
-                  >
-                    <KeyRound size={12} />
-                    <span>Segurança & Senha</span>
-                  </button>
-                </div>
-              )}
-
-              {isAdmin ? (
-                /* ========================================================
-                   VISÃO ADMINISTRADOR: PROTEGIDO (SEM ALTERAÇÕES)
-                   ======================================================== */
-                <div className="space-y-3">
-                  <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 text-xs space-y-2">
-                    <div className="flex items-center justify-between text-white/70 pb-1.5 border-b border-white/5">
-                      <span className="text-white/45">Função:</span>
-                      <span className="font-medium text-white">Race Control & Gestão Master</span>
-                    </div>
-                    <div className="flex items-center justify-between text-white/70 pb-1.5 border-b border-white/5">
-                      <span className="text-white/45">Identificador:</span>
-                      <span className="font-mono text-white/90">admin@apex.com</span>
-                    </div>
-                    <div className="flex items-center justify-between text-white/70">
-                      <span className="text-white/45">Criptografia:</span>
-                      <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-                        <CheckCircle2 size={12} /> BCrypt Salt rounds
-                      </span>
-                    </div>
+              {/* Scrollable content */}
+              <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-5">
+                {loading ? (
+                  <div className="space-y-3 pt-2">
+                    <div className="h-24 rounded-2xl bg-[#121622] animate-pulse" />
+                    <div className="h-11 rounded-full bg-[#121622] animate-pulse" />
+                    <div className="h-12 rounded-2xl bg-[#121622] animate-pulse" />
+                    <div className="h-12 rounded-2xl bg-[#121622] animate-pulse" />
                   </div>
-
-                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200/90 text-xs flex items-start gap-2.5 leading-relaxed">
-                    <ShieldAlert size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>Conta Master Protegida:</strong> A alteração de nome, credenciais e senha está bloqueada para o Administrador por política de integridade do ambiente.
-                    </span>
-                  </div>
-                </div>
-              ) : activeTab === 'dossie' ? (
-                /* ========================================================
-                   VISÃO CLIENTE: DOSSIÊ COMPLETO E EDIÇÃO DE DADOS
-                   ======================================================== */
-                <form onSubmit={handleSaveData} className="space-y-3">
-                  {/* Grid de Dados Oficiais Protegidos (CPF, RG, CNH, Nascimento) */}
-                  <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5 text-[11px] space-y-2">
-                    <p className="text-[10px] font-mono text-white/40 uppercase tracking-wider font-bold">
-                      Documentos Homologados
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 text-white/70">
-                      <div>
-                        <span className="text-white/40 block text-[10px]">CPF:</span>
-                        <span className="font-mono text-white/90">{maskCPFDisplay(profile?.cpf)}</span>
-                      </div>
-                      <div>
-                        <span className="text-white/40 block text-[10px]">RG:</span>
-                        <span className="font-mono text-white/90">{profile?.rg || 'Registrado'}</span>
-                      </div>
-                      <div>
-                        <span className="text-white/40 block text-[10px]">CNH:</span>
-                        <span className="font-mono text-white/90">
-                          {profile?.cnhNumero ? `${profile.cnhNumero} (Cat. ${profile.cnhCategoria || 'B'})` : 'Opcional'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-white/40 block text-[10px]">Nascimento:</span>
-                        <span className="font-mono text-white/90">{profile?.dataNascimento || 'Registrado'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Campos Editáveis */}
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1">
-                      Nome Completo
-                    </label>
-                    <input
-                      type="text"
-                      value={nomeEdit}
-                      onChange={(e) => setNomeEdit(e.target.value)}
-                      className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1 flex items-center justify-between">
-                      <span>WhatsApp / Telefone</span>
-                      <span className="text-[10px] text-white/40">Usado para verificação</span>
-                    </label>
-                    <input
-                      type="tel"
-                      value={telefoneEdit}
-                      onChange={(e) => setTelefoneEdit(e.target.value)}
-                      placeholder="(11) 98765-4321"
-                      className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1">
-                      Endereço
-                    </label>
-                    <input
-                      type="text"
-                      value={enderecoEdit}
-                      onChange={(e) => setEnderecoEdit(e.target.value)}
-                      placeholder="Cidade, estado"
-                      className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={savingData}
-                    className="w-full py-2.5 rounded-full bg-white text-[#08090C] hover:bg-white/90 text-xs font-semibold transition-all cursor-pointer shadow-md mt-1"
-                  >
-                    {savingData ? 'Salvando dados...' : 'Atualizar Dados Cadastrais'}
-                  </button>
-                </form>
-              ) : (
-                /* ========================================================
-                   VISÃO CLIENTE: ALTERAÇÃO SEGURA DE SENHA COM VERIFICAÇÃO
-                   ======================================================== */
-                <form onSubmit={handleSavePassword} className="space-y-3">
-                  <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 text-xs">
-                    <p className="text-[11px] text-white/60 mb-2 font-medium">
-                      Escolha como comprovar sua identidade para liberar a troca:
-                    </p>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMetodoVerificacao('senha_atual')}
-                        className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                          metodoVerificacao === 'senha_atual'
-                            ? 'bg-[#FF1717]/15 border-[#FF1717] text-white'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
-                        }`}
-                      >
-                        <span className="block text-xs font-semibold">Senha Atual</span>
-                        <span className="text-[10px] text-white/40">Digite sua senha de login</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setMetodoVerificacao('whatsapp')}
-                        className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                          metodoVerificacao === 'whatsapp'
-                            ? 'bg-[#FF1717]/15 border-[#FF1717] text-white'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
-                        }`}
-                      >
-                        <span className="block text-xs font-semibold flex items-center gap-1">
-                          <MessageCircle size={11} className="text-emerald-400" /> WhatsApp
-                        </span>
-                        <span className="text-[10px] text-white/40">Receba código OTP</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Campo de Verificação Condicional */}
-                  {metodoVerificacao === 'senha_atual' ? (
-                    <div>
-                      <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1">
-                        Sua Senha Atual *
-                      </label>
-                      <input
-                        type="password"
-                        value={senhaAtual}
-                        onChange={(e) => setSenhaAtual(e.target.value)}
-                        placeholder="Digite a senha atual da sua conta"
-                        className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-center justify-between mb-1 pl-1">
-                        <label className="text-[11px] font-medium text-white/75">
-                          Código de 6 dígitos via WhatsApp *
-                        </label>
+                ) : (
+                  <>
+                    {/* Highlight card: ApexPay Wallet (Cliente) or Admin Shortcut */}
+                    {isAdmin ? (
+                      <div className="rounded-2xl bg-[#121622] p-4 flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-white">Conta administrativa</p>
+                          <p className="text-xs text-white/50 mt-0.5">
+                            Alterações de dados e senha desta conta são gerenciadas internamente.
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={handleSolicitarCodigoWhatsApp}
-                          disabled={enviandoCodigo}
-                          className="text-[10px] text-[#FF1717] hover:underline font-medium cursor-pointer"
+                          onClick={() => handleNavigate('/admin')}
+                          className="px-4 py-2 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-medium shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
-                          {enviandoCodigo ? 'Enviando...' : codigoEnviado ? 'Reenviar código' : 'Enviar código'}
+                          Painel
+                          <ArrowRight size={13} />
                         </button>
                       </div>
-                      <input
-                        type="text"
-                        value={codigoWhatsApp}
-                        onChange={(e) => setCodigoWhatsApp(e.target.value)}
-                        placeholder="Ex: 582914"
-                        maxLength={6}
-                        className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10 font-mono tracking-widest text-center"
-                      />
-                    </div>
-                  )}
+                    ) : (
+                      <div className="rounded-2xl bg-[#121622] p-4 space-y-3.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-[#FF1717]/15 flex items-center justify-center text-[#FF1717]">
+                              <Wallet size={17} />
+                            </div>
+                            <div>
+                              <p className="text-xs text-white/50">Saldo ApexPay</p>
+                              <p className="text-lg font-medium text-white tabular-nums leading-tight">
+                                {formatCurrency(profile?.saldoCarteira)}
+                              </p>
+                            </div>
+                          </div>
 
-                  {/* Campos da Nova Senha */}
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1">
-                      Nova Senha *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={novaSenha}
-                        onChange={(e) => setNovaSenha(e.target.value)}
-                        placeholder="Mínimo 6 caracteres"
-                        className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 pr-10 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white cursor-pointer"
+                          <button
+                            type="button"
+                            onClick={() => handleNavigate('/apexpay')}
+                            className="px-4 py-2 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-[#FF1717]/20 cursor-pointer"
+                          >
+                            <span>Abrir ApexPay</span>
+                            <ArrowRight size={13} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleNavigate('/meus-alugueis')}
+                            className="flex-1 py-2 px-3 rounded-xl bg-[#0D1017] hover:bg-white/[0.06] text-xs text-white/80 hover:text-white flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                          >
+                            <Calendar size={13} className="text-[#FF1717]" />
+                            <span>Minhas sessões</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleNavigate('/apexpay')}
+                            className="flex-1 py-2 px-3 rounded-xl bg-[#0D1017] hover:bg-white/[0.06] text-xs text-white/80 hover:text-white flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                          >
+                            <Wallet size={13} className="text-white/60" />
+                            <span>Recarregar saldo</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Segmented Tab Switcher */}
+                    <div className="bg-[#121622] p-1 rounded-full grid grid-cols-2 gap-1">
+                      {(
+                        [
+                          { id: 'profile', label: 'Dados pessoais', icon: User },
+                          { id: 'security', label: 'Segurança', icon: Lock },
+                        ] as const
+                      ).map((tab) => {
+                        const Icon = tab.icon;
+                        const active = activeTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(tab.id);
+                              setFeedback(null);
+                            }}
+                            className={`relative py-2 px-3 rounded-full text-xs font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer ${
+                              active ? 'text-[#08090C]' : 'text-white/65 hover:text-white'
+                            }`}
+                          >
+                            {active && (
+                              <motion.span
+                                layoutId="account-drawer-tab"
+                                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                                className="absolute inset-0 rounded-full bg-white"
+                              />
+                            )}
+                            <Icon size={13} className="relative z-10" />
+                            <span className="relative z-10">{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Feedback Banner */}
+                    {feedback && (
+                      <div
+                        className={`rounded-2xl px-4 py-3 text-xs leading-relaxed flex items-start gap-2.5 ${
+                          feedback.type === 'success'
+                            ? 'bg-emerald-500/15 text-emerald-300'
+                            : 'bg-[#FF1717]/15 text-[#FF8A8A]'
+                        }`}
                       >
-                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
+                        <CheckCircle2
+                          size={15}
+                          className={`shrink-0 mt-0.5 ${
+                            feedback.type === 'success' ? 'text-emerald-400' : 'text-[#FF1717]'
+                          }`}
+                        />
+                        <span>{feedback.message}</span>
+                      </div>
+                    )}
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-white/75 mb-1 pl-1">
-                      Confirmar Nova Senha *
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={confirmarSenha}
-                      onChange={(e) => setConfirmarSenha(e.target.value)}
-                      placeholder="Repita a nova senha"
-                      className="w-full bg-white/10 text-white placeholder:text-white/30 text-xs rounded-full px-4 py-2 outline-none focus:ring-1 focus:ring-[#FF1717] border border-white/10"
-                    />
-                  </div>
+                    {/* Tab 1: Dados pessoais */}
+                    {activeTab === 'profile' ? (
+                      <form onSubmit={handleSaveProfile} className="space-y-4">
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                              Nome completo
+                            </label>
+                            <div className="relative">
+                              <User
+                                size={15}
+                                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                              />
+                              <input
+                                type="text"
+                                value={nome}
+                                onChange={(e) => setNome(e.target.value)}
+                                disabled={isAdmin}
+                                placeholder="Seu nome"
+                                className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] disabled:opacity-60 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                              />
+                            </div>
+                          </div>
 
-                  <button
-                    type="submit"
-                    disabled={savingPassword}
-                    className="w-full py-2.5 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-all cursor-pointer shadow-md shadow-[#FF1717]/25 mt-1"
-                  >
-                    {savingPassword ? 'Validando e salvando...' : 'Salvar Nova Senha com Verificação'}
-                  </button>
-                </form>
-              )}
+                          <div>
+                            <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                              Telefone / WhatsApp
+                            </label>
+                            <div className="relative">
+                              <Phone
+                                size={15}
+                                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                              />
+                              <input
+                                type="tel"
+                                value={telefone}
+                                onChange={(e) => setTelefone(formatPhone(e.target.value))}
+                                disabled={isAdmin}
+                                placeholder="(11) 99999-9999"
+                                className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] disabled:opacity-60 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                              Endereço
+                            </label>
+                            <div className="relative">
+                              <MapPin
+                                size={15}
+                                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                              />
+                              <input
+                                type="text"
+                                value={endereco}
+                                onChange={(e) => setEndereco(e.target.value)}
+                                disabled={isAdmin}
+                                placeholder="Rua, número e cidade"
+                                className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] disabled:opacity-60 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {!isAdmin && (
+                          <div className="rounded-2xl bg-[#121622]/80 p-4 space-y-2.5">
+                            <p className="text-xs font-medium text-white/75">
+                              Documentação cadastrada
+                            </p>
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <p className="text-white/40">CPF</p>
+                                <p className="text-white/85 mt-0.5 tabular-nums">
+                                  {maskCpf(profile?.cpf)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-white/40">CNH</p>
+                                <p className="text-white/85 mt-0.5 tabular-nums">
+                                  {profile?.cnhNumero
+                                    ? `${maskDocument(profile.cnhNumero)}${
+                                        profile.cnhCategoria ? ` (${profile.cnhCategoria})` : ''
+                                      }`
+                                    : 'Não informada'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {!isAdmin && (
+                          <button
+                            type="submit"
+                            disabled={savingProfile}
+                            className="w-full py-3 px-5 rounded-full bg-white hover:bg-white/90 disabled:opacity-50 text-[#08090C] text-sm font-semibold transition-all cursor-pointer"
+                          >
+                            {savingProfile ? 'Salvando alterações...' : 'Salvar alterações'}
+                          </button>
+                        )}
+                      </form>
+                    ) : (
+                      /* Tab 2: Segurança e senha */
+                      <div className="space-y-4">
+                        {isAdmin ? (
+                          <div className="rounded-2xl bg-[#121622] p-5 text-sm text-white/65 leading-relaxed">
+                            Por segurança, a alteração de senha da conta administrativa não é feita
+                            por este painel.
+                          </div>
+                        ) : (
+                          <form onSubmit={handleChangePassword} className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-white/55 px-1">
+                                Como deseja confirmar a alteração?
+                              </p>
+                              <div className="bg-[#121622] p-1 rounded-full grid grid-cols-2 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPasswordMethod('current');
+                                    setFeedback(null);
+                                  }}
+                                  className={`py-2 px-3 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                                    passwordMethod === 'current'
+                                      ? 'bg-[#1D2333] text-white'
+                                      : 'text-white/55 hover:text-white'
+                                  }`}
+                                >
+                                  <KeyRound size={13} />
+                                  <span>Senha atual</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPasswordMethod('whatsapp');
+                                    setFeedback(null);
+                                  }}
+                                  className={`py-2 px-3 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                                    passwordMethod === 'whatsapp'
+                                      ? 'bg-[#1D2333] text-white'
+                                      : 'text-white/55 hover:text-white'
+                                  }`}
+                                >
+                                  <MessageSquare size={13} />
+                                  <span>Via WhatsApp</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {passwordMethod === 'current' ? (
+                              <div>
+                                <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                                  Senha atual
+                                </label>
+                                <div className="relative">
+                                  <Lock
+                                    size={15}
+                                    className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                                  />
+                                  <input
+                                    type={showCurrentPassword ? 'text' : 'password'}
+                                    value={senhaAtual}
+                                    onChange={(e) => setSenhaAtual(e.target.value)}
+                                    placeholder="Digite sua senha atual"
+                                    className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] pl-10 pr-11 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCurrentPassword((v) => !v)}
+                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white cursor-pointer"
+                                    aria-label="Mostrar ou ocultar senha atual"
+                                  >
+                                    {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-2xl bg-[#121622] p-4 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-medium text-white">
+                                      Verificação por WhatsApp
+                                    </p>
+                                    <p className="text-xs text-white/50 truncate mt-0.5">
+                                      {telefone || 'Nenhum telefone cadastrado'}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={handleRequestWhatsAppCode}
+                                    disabled={requestingCode}
+                                    className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/15 disabled:opacity-50 text-xs font-medium text-white shrink-0 transition-colors cursor-pointer"
+                                  >
+                                    {requestingCode
+                                      ? 'Enviando...'
+                                      : codeSent
+                                      ? 'Reenviar código'
+                                      : 'Enviar código'}
+                                  </button>
+                                </div>
+
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={codigoWhatsApp}
+                                  onChange={(e) => setCodigoWhatsApp(e.target.value)}
+                                  placeholder="Código de verificação"
+                                  className="w-full rounded-xl bg-[#0D1017] px-3.5 py-2.5 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                                />
+                              </div>
+                            )}
+
+                            <div>
+                              <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                                Nova senha
+                              </label>
+                              <div className="relative">
+                                <KeyRound
+                                  size={15}
+                                  className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                                />
+                                <input
+                                  type={showNewPassword ? 'text' : 'password'}
+                                  value={novaSenha}
+                                  onChange={(e) => setNovaSenha(e.target.value)}
+                                  placeholder="Mínimo 6 caracteres"
+                                  className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] pl-10 pr-11 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setShowNewPassword((v) => !v)}
+                                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white cursor-pointer"
+                                  aria-label="Mostrar ou ocultar nova senha"
+                                >
+                                  {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                                Confirmar nova senha
+                              </label>
+                              <div className="relative">
+                                <KeyRound
+                                  size={15}
+                                  className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                                />
+                                <input
+                                  type={showNewPassword ? 'text' : 'password'}
+                                  value={confirmarSenha}
+                                  onChange={(e) => setConfirmarSenha(e.target.value)}
+                                  placeholder="Repita a nova senha"
+                                  className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={savingPassword}
+                              className="w-full py-3 px-5 rounded-full bg-[#FF1717] hover:bg-[#e01414] disabled:opacity-50 text-white text-sm font-semibold transition-all shadow-md shadow-[#FF1717]/20 cursor-pointer"
+                            >
+                              {savingPassword ? 'Atualizando senha...' : 'Atualizar senha'}
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-[#0B0E14] flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-4 py-2.5 rounded-full bg-[#121622] hover:bg-[#FF1717]/15 text-xs font-medium text-white/75 hover:text-[#FF8A8A] flex items-center gap-2 transition-colors cursor-pointer"
+                >
+                  <LogOut size={14} />
+                  <span>Sair da conta</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/70 hover:text-white transition-colors cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
-          )}
-
-          {/* Rodapé: Botões Fechar e Sair */}
-          <div className="pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
-            >
-              Fechar
-            </button>
-
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-xs font-medium transition-all cursor-pointer shadow-sm"
-            >
-              <LogOut size={13} />
-              <span>Sair da Conta</span>
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+          </motion.aside>
+        </div>
+      )}
+    </AnimatePresence>,
+    document.body
   );
 };
 

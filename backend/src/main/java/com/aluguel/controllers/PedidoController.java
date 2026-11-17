@@ -109,6 +109,27 @@ public class PedidoController {
         }
     }
 
+    @Get("/{id}/politica-alteracao")
+    @Secured("ROLE_CLIENTE")
+    public HttpResponse<?> obterPoliticaAlteracao(@PathVariable Long id, Principal principal) {
+        try {
+            return HttpResponse.ok(facade.obterPoliticaAlteracao(id, principal.getName()));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @Put("/{id}/reagendar")
+    @Secured("ROLE_CLIENTE")
+    public HttpResponse<?> reagendarPedido(@PathVariable Long id, @Body Map<String, Long> body, Principal principal) {
+        try {
+            Long novoSlotId = body != null ? body.get("trackSlotId") : null;
+            return HttpResponse.ok(facade.reagendarPedidoCliente(id, principal.getName(), novoSlotId));
+        } catch (Exception e) {
+            return HttpResponse.badRequest(Map.of("message", e.getMessage()));
+        }
+    }
+
     @Get("/meus")
     @Secured("ROLE_CLIENTE")
     public HttpResponse<?> listarMeusPedidos(Principal principal) {

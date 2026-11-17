@@ -654,7 +654,7 @@ const MicroSlats = ({
     });
     const scalePass = fluidPass(scaleFragment, { uSource: { value: blank }, uValue: { value: 0 } });
 
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const reducedMotion = false;
 
     let width = 1;
     let height = 1;

@@ -40,6 +40,7 @@ export interface Circuit {
   onboardYoutubeId: string;
   videoThumbnail: string;
   synopsis: string;
+  scheduleSummary: string;
   nextDates: string[];
   sectors: { name: string; targetTime: string }[];
 }
@@ -85,7 +86,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "_6Dz8RdjCFw",
     videoThumbnail: '/circuits/nurburgring-video.jpg',
     synopsis: "Conhecido mundialmente como o 'Inferno Verde', Nürburgring Nordschleife é a meca absoluta do automobilismo. São mais de 20 km de asfalto encravados nas montanhas alemãs de Eifel. Ao reservar sua sessão, você recebe suporte de box privativo, seguro de pista internacional e o carro calibrado para voltas rápidas inesquecíveis.",
-    nextDates: ['15 Nov · Sáb', '22 Nov · Dom', '06 Dez · Sáb'],
+    scheduleSummary: 'Touristenfahrten · Sáb/Dom (Manhã e Tarde) · Ter/Qui (Entardecer)',
+    nextDates: ['Sáb · Manhã/Tarde', 'Dom · Manhã/Tarde', 'Ter/Qui · Entardecer'],
     "sectors": [
       {
         "name": "Sector 1 (Hatzenbach / Flugplatz)",
@@ -129,8 +131,9 @@ export const CIRCUITS: Circuit[] = [
     "trackSvgPath": "m 63.119622,954.63891 c -16.381656,2.86118 -32.658217,6.32181 -49.021838,9.29172 -13.64756997,2.47696 -27.280604,5.20441 -41.011734,7.04889 -7.73595,1.03916 -15.584272,1.32326 -23.389505,1.60202 -7.146962,0.25525 -14.34431,0.46327 -21.46708,0 -6.013801,-0.39114 -12.036555,-1.3489 -17.942633,-2.56323 -5.52167,-1.1353 -11.398962,-1.98827 -16.340612,-4.48566 -4.99088,-2.52227 -9.34078,-6.64424 -13.45698,-10.57334 -7.63195,-7.28505 -14.22928,-15.79083 -21.78748,-23.0691 -1.09271,-1.05224 -2.74792,-2.16773 -4.16525,-1.92242 -4.13634,0.71591 -8.27988,3.85152 -12.49577,4.80606 -1.44459,0.32708 -3.36667,0.0507 -4.48566,-0.96121 -11.16317,-10.09538 -21.25458,-21.95974 -32.36082,-32.36082 -2.35073,-2.20148 -5.1513,-3.96818 -8.0101,-5.44687 -6.43292,-3.32737 -13.72513,-5.23672 -19.86506,-8.97132 -4.2198,-2.56668 -8.0435,-6.16364 -11.21415,-9.93253 -2.48982,-2.9596 -4.58864,-6.54457 -5.76727,-10.25293 -3.20023,-10.06902 -3.82775,-21.22446 -7.3693,-31.07921 -1.37131,-3.81583 -4.39916,-7.29992 -7.36929,-9.93253 -1.72913,-1.53264 -4.40224,-2.11778 -6.72849,-2.56323 -2.69342,-0.51576 -5.58866,-0.58404 -8.33051,-0.3204 -2.81183,0.27037 -5.52084,1.71037 -8.33051,1.92242 -2.8508,0.21515 -5.9587,0.18334 -8.65091,-0.64081 -2.54105,-0.77787 -4.86814,-2.5396 -7.04889,-4.16525 -3.69333,-2.75321 -7.17349,-5.84565 -10.57334,-8.97132 -3.22184,-2.96201 -6.72084,-5.76221 -9.29172,-9.29172 -10.03168,-13.77231 -19.87405,-28.03053 -28.51597,-42.61376 -1.61102,-2.71859 -2.443,-6.23918 -2.24283,-9.29172 0.22704,-3.46234 1.8569,-7.06413 3.52444,-10.25293 4.42014,-8.45255 9.56827,-16.62018 14.7386,-24.67112 2.30577,-3.59041 4.69511,-7.21262 7.6897,-10.25293 24.98737,-25.36886 50.39768,-50.49642 76.25619,-74.97458 4.15268,-3.93101 8.81582,-7.40108 13.77738,-10.25293 108.56832,-62.4038 217.707586,-124.07031 326.812255,-185.51402 1.648375,-0.9283 3.647235,-1.6993 5.446875,-1.60202 2.15201,0.11633 4.21242,1.73966 6.40808,2.24283 2.93081,0.67164 6.17758,1.79475 8.97132,1.28161 2.43953,-0.44808 4.974,-2.30757 6.72848,-4.16525 1.87677,-1.98717 2.78191,-4.91001 4.16526,-7.3693 1.50029,-2.66718 2.6211,-5.61964 4.48566,-8.0101 2.3007,-2.94961 4.74016,-6.12827 8.0101,-8.0101 131.83381,-75.86958 265.45617,-149.45426 397.30117,-225.24414 2.29755,-1.32073 3.756,-3.86883 5.12647,-6.08768 0.87236,-1.41239 1.3026,-3.15926 1.60202,-4.80606 0.34139,-1.87764 -0.0116,-3.88565 0.32041,-5.76727 0.30876,-1.74962 0.61797,-3.72809 1.60202,-5.12647 1.04518,-1.48526 2.79787,-2.78604 4.48566,-3.52445 1.72986,-0.75681 3.8267,-0.93225 5.76727,-0.96121 5.21513,-0.0778 10.48871,0.83146 15.69981,0.64081 3.54661,-0.12975 7.24916,-0.46089 10.57333,-1.60202 3.83152,-1.3153 7.28678,-3.79985 10.89374,-5.76728 12.84046,-7.00388 25.41352,-14.55511 38.44851,-21.14667 5.76206,-2.91377 11.73564,-5.5728 17.94263,-7.3693 59.47586,-17.21415 119.30112,-33.493457 179.10593,-49.662645 30.65596,-8.28833 61.41921,-16.500285 92.2764,-23.709909 3.42606,-0.80048 7.04938,-0.381162 10.57334,-0.320404 8.86501,0.152845 17.97756,-0.17018 26.59355,0.961213 1.95735,0.257025 4.08533,1.734204 5.12646,3.204041 0.77449,1.093397 0.39643,2.98884 0.32041,4.485659 -3.02122,59.486775 -5.84261,119.045515 -9.61213,178.465125 -0.28893,4.55442 -1.40437,9.0413 -2.56323,13.45697 -11.2301,42.79055 -22.44384,85.64875 -34.60365,128.16167 -1.83117,6.40212 -4.54232,12.55087 -7.3693,18.58344 -21.09653,45.01849 -41.54083,90.8112 -64.40124,134.56976 -2.02431,3.87487 -6.5084,6.04219 -10.25293,8.33051 -9.71245,5.93538 -20.74015,10.20895 -30.11799,16.34061 -1.7295,1.13083 -3.00569,3.46338 -3.20404,5.44687 -0.33566,3.35658 -0.17509,7.52895 1.60202,10.57334 11.25266,19.2771 25.41506,37.39221 37.48729,56.39113 0.95754,1.50695 1.78848,3.57263 1.60202,5.12647 -0.13394,1.11619 -1.40357,2.33389 -2.56324,2.88364 -44.12412,20.91733 -89.12961,40.53236 -133.28813,61.5176 -3.2613,1.54985 -6.11528,3.87489 -8.97132,6.08768 -20.85387,16.15705 -41.35547,32.78923 -62.15841,49.02183 -7.39263,5.76849 -15.14843,11.08223 -22.42829,16.98143 -5.1091,4.14013 -10.10915,8.46887 -14.73859,13.13657 -8.29353,8.36206 -15.6125,17.7322 -24.03032,25.95273 -5.25276,5.12965 -10.92208,10.10749 -16.98142,14.09779 -2.69837,1.77698 -6.10853,2.5366 -9.29172,3.20404 -3.4385,0.72097 -7.06651,1.11368 -10.57334,0.96121 -3.86247,-0.16793 -7.95252,-0.57267 -11.53455,-1.92242 -3.78726,-1.42708 -7.01503,-4.32948 -10.57333,-6.40809 -7.22864,-4.22267 -14.30085,-8.86821 -21.78749,-12.49576 -2.8731,-1.39212 -6.1366,-2.19513 -9.29172,-2.56323 -3.25296,-0.37951 -6.65278,-0.056 -9.93253,0.3204 -3.23513,0.37124 -6.46702,1.04879 -9.61212,1.92243 -8.38945,2.3304 -16.84267,4.70447 -24.99153,7.6897 -2.63808,0.96642 -5.158,2.46426 -7.36929,4.16525 -1.95396,1.50305 -3.73517,3.40962 -5.12647,5.44687 -1.59914,2.3416 -2.50846,5.15517 -3.84485,7.6897 -1.76085,3.33954 -3.39983,6.77424 -5.44687,9.93253 -1.69101,2.60899 -3.43746,5.36565 -5.76728,7.3693 -3.01025,2.58881 -6.77646,4.37467 -10.25293,6.40808 -2.184,1.27743 -4.31032,2.96021 -6.72849,3.52445 -3.98992,0.93098 -8.3298,0.89903 -12.49576,0.96121 -2.98973,0.0446 -6.18609,0.27238 -8.97132,-0.64081 -3.72966,-1.22284 -7.15126,-3.67376 -10.57334,-5.76727 -5.65604,-3.46017 -10.82743,-7.87153 -16.66101,-10.89375 -3.03093,-1.57024 -6.55828,-2.57216 -9.93253,-2.88363 -3.56784,-0.32934 -7.44322,-0.10531 -10.89374,0.96121 -8.29764,2.56472 -16.11441,6.95229 -24.35072,9.93253 -7.99751,2.89383 -16.15354,5.45411 -24.35072,7.6897 -3.55097,0.96845 -7.23105,1.64068 -10.89374,1.92242 -4.66782,0.35906 -9.45153,-0.44553 -14.09778,0 -3.15025,0.30208 -6.44111,0.85272 -9.29172,2.24283 -14.45122,7.0472 -28.30818,15.57132 -42.61376,23.0691 -18.90966,9.91085 -38.4057,18.89334 -57.03194,29.15678 -2.30683,1.27111 -4.40204,3.36309 -5.76728,5.44687 -0.66399,1.01346 0.20138,2.72101 -0.3204,3.84485 -0.86663,1.8666 -2.03319,4.08477 -3.84485,5.12647 -6.73245,3.87116 -15.13055,5.72172 -21.78748,9.61213 -1.56678,0.91565 -2.53657,2.85487 -2.64927,4.77481 -0.0485,0.82635 0.0596,1.58884 -0.0625,2.37573 -0.27584,1.77758 -2.10171,3.39239 -3.69632,3.7432 -14.425599,3.17363 -29.731828,4.4632 -44.536178,7.04889 z",
     "onboardYoutubeId": "AQslKnt4DJE",
     videoThumbnail: '/circuits/le_mans-video.jpg',
-    synopsis: "Palco lendário das 24 Horas de Le Mans, este circuito combina o traçado de pista fechada com estradas rurais históricas da França. Sinta a velocidade contínua na reta Mulsanne em sessões exclusivas de track day com mecânicos de apoio dedicados e credencial VIP para o paddock.",
-    nextDates: ['18 Nov · Ter', '29 Nov · Sáb', '13 Dez · Dom'],
+    synopsis: "Palco lendário das 24 Horas de Le Mans, este circuito combina o traçado permanente Bugatti com a história das provas de longa duração da França. Sinta a técnica das curvas Dunlop e Ford em sessões exclusivas de track day, com suporte de boxes dedicado e datas noturnas especiais de endurance.",
+    scheduleSummary: 'Circuito Bugatti · Fins de semana quinzenais (+ Noturno Sáb)',
+    nextDates: ['Sáb · Manhã/Tarde/Noturno', 'Dom · Manhã/Tarde', 'Agenda quinzenal'],
     "sectors": [
       {
         "name": "Sector 1 (Dunlop / Tertre Rouge)",
@@ -175,7 +178,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "EOyQBtOh2YM",
     videoThumbnail: '/circuits/spa-video.jpg',
     synopsis: "Localizado no coração das densas florestas das Ardenas, Spa é aclamado como a mais espetacular montanha-russa do motorsport mundial. Acelere montanha acima pela mítica Eau Rouge e Raidillon com nossa equipe no pitlane e cobertura securitária completa para o seu supercarro.",
-    nextDates: ['16 Nov · Dom', '23 Nov · Dom', '07 Dez · Dom'],
+    scheduleSummary: 'Open Pitlane (103 dB) · Fins de semana e Quartas selecionadas',
+    nextDates: ['Sáb/Dom · Open Pitlane', 'Qua/Sex selecionadas', 'Somente diurno'],
     "sectors": [
       {
         "name": "Sector 1 (Eau Rouge / Raidillon)",
@@ -220,7 +224,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "SFN2udiMN_U",
     videoThumbnail: '/circuits/monza-video.jpg',
     synopsis: "O histórico 'Templo da Velocidade' nos arredores de Milão é o autódromo mais rápido da Europa. Ideal para quem deseja explorar o limite de aceleração em retas monumentais e frear forte nas icônicas chicanes de Ascari e Parabolica com suporte técnico de ponta.",
-    nextDates: ['17 Nov · Seg', '24 Nov · Seg', '08 Dez · Seg'],
+    scheduleSummary: 'Monza Track Days · Sáb/Dom e Sextas selecionadas (Manhã/Tarde)',
+    nextDates: ['Sáb · Manhã/Tarde', 'Dom · Manhã/Tarde', 'Sex selecionadas'],
     "sectors": [
       {
         "name": "Sector 1 (Variante del Rettifilo)",
@@ -265,7 +270,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "-c0pMUQr-Og",
     videoThumbnail: '/circuits/monaco-video.jpg',
     synopsis: "O traçado urbano mais glamoroso e lendário do automobilismo. Pilotar pelas avenidas de Monte Carlo, contornar a curva do Cassino e atravessar o famoso túnel à beira do Mar Mediterrâneo é uma experiência inesquecível com atendimento exclusivo de concierge.",
-    nextDates: ['20 Nov · Qui', '28 Nov · Sex', '12 Dez · Sex'],
+    scheduleSummary: 'Circuito de rua · Datas exclusivas quinzenais (Grid máx. 6 carros)',
+    nextDates: ['Sáb quinzenal · 6 vagas', 'Dom quinzenal · 6 vagas', 'Fechado dias úteis'],
     "sectors": [
       {
         "name": "Sector 1 (Sainte-Dévote / Beau Rivage)",
@@ -310,7 +316,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "-yRcQa2xDWI",
     videoThumbnail: '/circuits/silverstone-video.jpg',
     synopsis: "O berço histórico da Fórmula 1 e capital do motorsport britânico. Com curvas de altíssima velocidade como Copse, Maggotts e Becketts, Silverstone testa a precisão aerodinâmica do carro. Nossa equipe recepciona você no complexo The Wing com estrutura de box privativo.",
-    nextDates: ['19 Nov · Qua', '27 Nov · Qui', '10 Dez · Qua'],
+    scheduleSummary: 'Public Track Days (102 dB) · Sex/Sáb/Dom e Quartas alternadas',
+    nextDates: ['Sex/Sáb/Dom · Open Pitlane', 'Qua alternada · Manhã/Tarde', 'Somente diurno'],
     "sectors": [
       {
         "name": "Sector 1 (Abbey / Copse)",
@@ -355,7 +362,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "WTMxWS3nu0Y",
     videoThumbnail: '/circuits/interlagos-video.jpg',
     synopsis: "Com seu lendário S do Senna e traçado técnico ondulado no sentido anti-horário, Interlagos é um dos circuitos mais reverenciados do automobilismo mundial. Alugue seu supercarro para uma bateria cronometrada com telemetria e suporte mecânico completo.",
-    nextDates: ['21 Nov · Sex', '30 Nov · Dom', '14 Dez · Dom'],
+    scheduleSummary: 'Track Days Oficiais · Sáb/Dom e Sextas selecionadas (08h às 18h)',
+    nextDates: ['Sáb · Manhã/Tarde', 'Dom · Manhã/Tarde', 'Sex selecionadas (diurno)'],
     "sectors": [
       {
         "name": "Sector 1 (S do Senna / Curva do Sol)",
@@ -400,7 +408,8 @@ export const CIRCUITS: Circuit[] = [
     "onboardYoutubeId": "wXUkJ_M_LBA",
     videoThumbnail: '/circuits/suzuka-video.jpg',
     synopsis: "Famoso por seu desenho em formato de '8' com cruzamento em desnível e pelas míticas curvas dos Esses e da 130R, Suzuka é a obra-prima das pistas asiáticas. Desfrute de voltas rápidas com suporte operacional completo no pitlane oficial.",
-    nextDates: ['25 Nov · Ter', '02 Dez · Ter', '16 Dez · Ter'],
+    scheduleSummary: 'SMSC Sports Driving · Fins de semana e Terças alternadas',
+    nextDates: ['Sáb/Dom alternados', 'Ter alternada · Manhã/Tarde', 'Somente diurno'],
     "sectors": [
       {
         "name": "Sector 1 (S Curves / Dunlop)",
@@ -480,6 +489,34 @@ export async function getCircuitLiveWeather(circuit: Circuit): Promise<CircuitLi
       gripColor: '#FF1717',
       lastUpdated: 'LIVE',
     };
+  }
+}
+
+export interface BrlExchangeRates {
+  EUR: number; // quantos EUR equivalem a 1 BRL
+  GBP: number; // quantos GBP equivalem a 1 BRL
+  JPY: number; // quantos JPY equivalem a 1 BRL
+}
+
+const DEFAULT_BRL_RATES: BrlExchangeRates = {
+  EUR: 1 / 6.15,
+  GBP: 1 / 7.35,
+  JPY: 25.5,
+};
+
+export async function getBrlExchangeRates(): Promise<BrlExchangeRates> {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/BRL');
+    if (!res.ok) return DEFAULT_BRL_RATES;
+    const data = await res.json();
+    const rates = data?.rates || {};
+    return {
+      EUR: typeof rates.EUR === 'number' && rates.EUR > 0 ? rates.EUR : DEFAULT_BRL_RATES.EUR,
+      GBP: typeof rates.GBP === 'number' && rates.GBP > 0 ? rates.GBP : DEFAULT_BRL_RATES.GBP,
+      JPY: typeof rates.JPY === 'number' && rates.JPY > 0 ? rates.JPY : DEFAULT_BRL_RATES.JPY,
+    };
+  } catch {
+    return DEFAULT_BRL_RATES;
   }
 }
 

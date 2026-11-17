@@ -88,6 +88,16 @@ public class Pedido {
     @Column
     private LocalDateTime checkInRealizadoEm;
 
+    // --- 📅 REGRAS DE CANCELAMENTO E REAGENDAMENTO ANTI-ABUSO ---
+    @Column
+    private Integer reagendamentosCount = 0;
+
+    @Column
+    private Integer taxaCancelamentoMinima = 0;
+
+    @Column
+    private BigDecimal taxaAplicada = BigDecimal.ZERO;
+
     // Campos transientes recebidos no checkout para atualização imediata do perfil
     @Transient
     private String cnhInformada;
@@ -156,4 +166,11 @@ public class Pedido {
     public void setQrCodeGeradoEm(LocalDateTime qrCodeGeradoEm) { this.qrCodeGeradoEm = qrCodeGeradoEm; }
     public LocalDateTime getCheckInRealizadoEm() { return checkInRealizadoEm; }
     public void setCheckInRealizadoEm(LocalDateTime checkInRealizadoEm) { this.checkInRealizadoEm = checkInRealizadoEm; }
+
+    public Integer getReagendamentosCount() { return reagendamentosCount != null ? reagendamentosCount : 0; }
+    public void setReagendamentosCount(Integer reagendamentosCount) { this.reagendamentosCount = reagendamentosCount != null ? reagendamentosCount : 0; }
+    public Integer getTaxaCancelamentoMinima() { return taxaCancelamentoMinima != null ? taxaCancelamentoMinima : 0; }
+    public void setTaxaCancelamentoMinima(Integer taxaCancelamentoMinima) { this.taxaCancelamentoMinima = taxaCancelamentoMinima != null ? taxaCancelamentoMinima : 0; }
+    public BigDecimal getTaxaAplicada() { return taxaAplicada != null ? taxaAplicada : BigDecimal.ZERO; }
+    public void setTaxaAplicada(BigDecimal taxaAplicada) { this.taxaAplicada = taxaAplicada != null ? taxaAplicada : BigDecimal.ZERO; }
 }

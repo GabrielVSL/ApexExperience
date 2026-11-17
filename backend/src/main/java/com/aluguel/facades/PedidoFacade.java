@@ -464,7 +464,7 @@ public class PedidoFacade {
         Pedido pedido = pedidoRepository.findById(idPedido)
                 .orElseThrow(() -> new IllegalArgumentException("Pedido não encontrado."));
 
-        if (!pedido.getCliente().getEmail().equals(emailCliente)) {
+        if (pedido.getCliente() == null || !pedido.getCliente().getEmail().equals(emailCliente)) {
             throw new IllegalArgumentException("Este pedido não pertence a você.");
         }
 
@@ -472,13 +472,269 @@ public class PedidoFacade {
             throw new IllegalArgumentException("Este pedido já foi finalizado.");
         }
 
+        if (pedido.getCheckInRealizadoEm() != null) {
+            throw new IllegalStateException("Não é possível cancelar uma sessão após o check-in no box.");
+        }
+
+        LocalDateTime agora = LocalDateTime.now();
+        int percentualTaxa = calcularPercentualTaxaCancelamento(pedido, agora);
+        BigDecimal valorBase = pedido.getValorFinal() != null
+                ? pedido.getValorFinal()
+                : (pedido.getValorTotal() != null ? pedido.getValorTotal() : BigDecimal.ZERO);
+        BigDecimal valorTaxa = calcularValorPercentual(valorBase, percentualTaxa);
+
         pedido.setStatus("CANCELADO");
+        pedido.setTaxaAplicada(valorTaxa);
         liberarSlotSePresente(pedido);
-        estornarSeNecessario(pedido, "Sessão cancelada a pedido do piloto");
+
+        String pStatus = pedido.getPagamentoStatus();
+        boolean jaDebitadoOuPago = "PAGO_CARTEIRA".equalsIgnoreCase(pStatus)
+                || "DEBITO_ABERTO".equalsIgnoreCase(pStatus)
+                || "FATURA_EM_ABERTO".equalsIgnoreCase(pStatus);
+
+        if (jaDebitadoOuPago && apexPayFacade != null) {
+            BigDecimal valorEstorno = valorBase.subtract(valorTaxa).max(BigDecimal.ZERO);
+            if (valorEstorno.compareTo(BigDecimal.ZERO) > 0) {
+                String motivoEstorno = percentualTaxa > 0
+                        ? String.format("Reembolso parcial por cancelamento (taxa de %d%% retida)", percentualTaxa)
+                        : "Reembolso integral por cancelamento antecipado";
+                apexPayFacade.estornarReserva(pedido.getCliente(), valorEstorno, pedido.getTrackingCode(), motivoEstorno);
+                pedido.setPagamentoStatus("ESTORNADO");
+            } else {
+                pedido.setPagamentoStatus("CANCELADO");
+            }
+        } else if (("FATURA_AGUARDANDO_APROVACAO".equalsIgnoreCase(pStatus) || "PENDENTE".equalsIgnoreCase(pStatus))
+                && valorTaxa.compareTo(BigDecimal.ZERO) > 0
+                && apexPayFacade != null) {
+            apexPayFacade.debitarValorLiquido(
+                    pedido.getCliente(),
+                    valorTaxa,
+                    pedido.getTrackingCode(),
+                    String.format("Taxa de cancelamento tardio (%d%%) [%s]", percentualTaxa, pedido.getTrackingCode())
+            );
+            pedido.setPagamentoStatus("CANCELADO");
+        } else {
+            pedido.setPagamentoStatus("CANCELADO");
+        }
+
         if (qrCodePassService != null) {
             qrCodePassService.gerarOuAtualizarQrCode(pedido);
         }
         return pedidoRepository.update(pedido);
+    }
+
+    public Map<String, Object> obterPoliticaAlteracao(Long idPedido, String emailCliente) {
+        Pedido pedido = pedidoRepository.findById(idPedido)
+                .orElseThrow(() -> new IllegalArgumentException("Sessão não encontrada."));
+
+        if (pedido.getCliente() == null || !pedido.getCliente().getEmail().equals(emailCliente)) {
+            throw new IllegalArgumentException("Este pedido não pertence a você.");
+        }
+
+        LocalDateTime agora = LocalDateTime.now();
+        long horasAteSessao = pedido.getDataInicio() != null
+                ? ChronoUnit.HOURS.between(agora, pedido.getDataInicio())
+                : 999L;
+
+        BigDecimal valorBase = pedido.getValorFinal() != null
+                ? pedido.getValorFinal()
+                : (pedido.getValorTotal() != null ? pedido.getValorTotal() : BigDecimal.ZERO);
+
+        int faixaAtualCancelamento = calcularFaixaCancelamentoPorHoras(horasAteSessao);
+        int taxaCancelamentoMinima = pedido.getTaxaCancelamentoMinima();
+        int taxaCancelamentoPercent = Math.max(faixaAtualCancelamento, taxaCancelamentoMinima);
+        BigDecimal taxaCancelamentoValor = calcularValorPercentual(valorBase, taxaCancelamentoPercent);
+        BigDecimal valorEstornoLiquido = valorBase.subtract(taxaCancelamentoValor).max(BigDecimal.ZERO);
+
+        boolean statusAtivo = !"CANCELADO".equals(pedido.getStatus()) && !"REJEITADO".equals(pedido.getStatus());
+        boolean semCheckIn = pedido.getCheckInRealizadoEm() == null;
+        boolean podeCancelar = statusAtivo && semCheckIn;
+
+        int reagendamentosUsados = pedido.getReagendamentosCount();
+        int reagendamentosLimite = 1;
+        boolean podeReagendar = true;
+        String motivoBloqueioReagendamento = null;
+
+        if (!statusAtivo) {
+            podeReagendar = false;
+            motivoBloqueioReagendamento = "Esta sessão já foi finalizada.";
+        } else if (!semCheckIn) {
+            podeReagendar = false;
+            motivoBloqueioReagendamento = "O check-in no box já foi realizado.";
+        } else if (reagendamentosUsados >= reagendamentosLimite) {
+            podeReagendar = false;
+            motivoBloqueioReagendamento = "Cada reserva permite apenas 1 alteração de data.";
+        } else if (horasAteSessao < 24) {
+            podeReagendar = false;
+            motivoBloqueioReagendamento = "Com menos de 24 horas de antecedência não é possível remarcar; apenas cancelar.";
+        }
+
+        int taxaReagendamentoPercent = calcularPercentualTaxaReagendamento(horasAteSessao);
+        BigDecimal taxaReagendamentoValor = calcularValorPercentual(valorBase, taxaReagendamentoPercent);
+
+        Map<String, Object> politica = new java.util.HashMap<>();
+        politica.put("pedidoId", pedido.getId());
+        politica.put("horasAteSessao", Math.max(horasAteSessao, 0));
+        politica.put("valorBase", valorBase);
+        politica.put("podeCancelar", podeCancelar);
+        politica.put("taxaCancelamentoPercent", taxaCancelamentoPercent);
+        politica.put("taxaCancelamentoValor", taxaCancelamentoValor);
+        politica.put("valorEstornoLiquido", valorEstornoLiquido);
+        politica.put("travaAntiBurlaAtiva", taxaCancelamentoMinima > faixaAtualCancelamento || reagendamentosUsados > 0);
+        politica.put("taxaCancelamentoMinima", taxaCancelamentoMinima);
+        politica.put("podeReagendar", podeReagendar);
+        politica.put("motivoBloqueioReagendamento", motivoBloqueioReagendamento);
+        politica.put("taxaReagendamentoPercent", taxaReagendamentoPercent);
+        politica.put("taxaReagendamentoValor", taxaReagendamentoValor);
+        politica.put("reagendamentosUsados", reagendamentosUsados);
+        politica.put("reagendamentosLimite", reagendamentosLimite);
+        return politica;
+    }
+
+    @Transactional
+    public Pedido reagendarPedidoCliente(Long idPedido, String emailCliente, Long novoSlotId) {
+        if (trackSlotRepository == null) {
+            throw new IllegalStateException("Serviço de horários indisponível.");
+        }
+        if (novoSlotId == null) {
+            throw new IllegalArgumentException("Selecione a nova data e turno desejados.");
+        }
+
+        Pedido pedido = pedidoRepository.findById(idPedido)
+                .orElseThrow(() -> new IllegalArgumentException("Sessão não encontrada."));
+
+        if (pedido.getCliente() == null || !pedido.getCliente().getEmail().equals(emailCliente)) {
+            throw new IllegalArgumentException("Este pedido não pertence a você.");
+        }
+
+        if ("CANCELADO".equals(pedido.getStatus()) || "REJEITADO".equals(pedido.getStatus())) {
+            throw new IllegalArgumentException("Não é possível alterar uma sessão cancelada ou recusada.");
+        }
+
+        if (pedido.getCheckInRealizadoEm() != null) {
+            throw new IllegalStateException("O check-in no box já foi realizado; não é possível alterar a data.");
+        }
+
+        if (pedido.getReagendamentosCount() >= 1) {
+            throw new IllegalStateException("Limite atingido: cada reserva permite apenas 1 alteração de data.");
+        }
+
+        LocalDateTime agora = LocalDateTime.now();
+        long horasAteSessao = pedido.getDataInicio() != null
+                ? ChronoUnit.HOURS.between(agora, pedido.getDataInicio())
+                : 999L;
+
+        if (horasAteSessao < 24) {
+            throw new IllegalStateException("Alteração de data bloqueada com menos de 24 horas de antecedência.");
+        }
+
+        TrackSlot novoSlot = trackSlotRepository.findById(novoSlotId)
+                .orElseThrow(() -> new IllegalArgumentException("Novo horário não encontrado."));
+
+        Long slotAtualId = pedido.getTrackSlot() != null ? pedido.getTrackSlot().getId() : null;
+        if (novoSlotId.equals(slotAtualId)) {
+            throw new IllegalArgumentException("Escolha uma data ou turno diferente do atual.");
+        }
+
+        if (!novoSlot.temVagaDisponivel()) {
+            throw new IllegalArgumentException("Não há mais vagas disponíveis para este turno.");
+        }
+
+        if (novoSlot.getData() == null || novoSlot.getData().isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("A nova data não pode estar no passado.");
+        }
+
+        if (novoSlot.getData().getDayOfWeek() == DayOfWeek.MONDAY) {
+            throw new IllegalArgumentException("As pistas ficam fechadas às segundas-feiras para manutenção.");
+        }
+
+        LocalDateTime[] novaJanela = resolverJanelaSlot(novoSlot);
+        if (pedido.getAutomovel() != null) {
+            long conflitos = pedidoRepository.countAlugueisConflitantesExcluindoPedido(
+                    pedido.getAutomovel().getId(),
+                    pedido.getId(),
+                    novaJanela[0],
+                    novaJanela[1]
+            );
+            if (conflitos > 0) {
+                throw new IllegalArgumentException("O veículo já está reservado para outro piloto nesta data e turno.");
+            }
+        }
+
+        BigDecimal valorBase = pedido.getValorFinal() != null
+                ? pedido.getValorFinal()
+                : (pedido.getValorTotal() != null ? pedido.getValorTotal() : BigDecimal.ZERO);
+
+        int taxaCancelamentoOrigem = calcularPercentualTaxaCancelamento(pedido, agora);
+        int taxaRemarcacaoPercent = calcularPercentualTaxaReagendamento(horasAteSessao);
+        BigDecimal valorTaxaRemarcacao = calcularValorPercentual(valorBase, taxaRemarcacaoPercent);
+
+        if (valorTaxaRemarcacao.compareTo(BigDecimal.ZERO) > 0 && apexPayFacade != null) {
+            if ("CARTEIRA_APEXPAY".equalsIgnoreCase(pedido.getFormaPagamento())) {
+                BigDecimal saldoAtual = pedido.getCliente().getSaldoCarteira() != null
+                        ? pedido.getCliente().getSaldoCarteira()
+                        : BigDecimal.ZERO;
+                if (saldoAtual.compareTo(valorTaxaRemarcacao) < 0) {
+                    throw new IllegalStateException(
+                            String.format("Saldo insuficiente no ApexPay para pagar a taxa de alteração de data (R$ %.2f).", valorTaxaRemarcacao)
+                    );
+                }
+            }
+            apexPayFacade.debitarValorLiquido(
+                    pedido.getCliente(),
+                    valorTaxaRemarcacao,
+                    pedido.getTrackingCode(),
+                    String.format("Taxa de alteração de data (%d%%) [%s]", taxaRemarcacaoPercent, pedido.getTrackingCode())
+            );
+        }
+
+        // Trava Anti-Burla: preserva a maior taxa de cancelamento vigente antes da remarcação
+        pedido.setTaxaCancelamentoMinima(Math.max(pedido.getTaxaCancelamentoMinima(), taxaCancelamentoOrigem));
+        pedido.setReagendamentosCount(pedido.getReagendamentosCount() + 1);
+        pedido.setTaxaAplicada(valorTaxaRemarcacao);
+
+        liberarSlotSePresente(pedido);
+        novoSlot.ocuparVaga();
+        trackSlotRepository.update(novoSlot);
+        pedido.setTrackSlot(novoSlot);
+        pedido.setDataInicio(novaJanela[0]);
+        pedido.setDataFim(novaJanela[1]);
+
+        if (qrCodePassService != null) {
+            qrCodePassService.gerarOuAtualizarQrCode(pedido);
+        }
+        return pedidoRepository.update(pedido);
+    }
+
+    private int calcularPercentualTaxaCancelamento(Pedido pedido, LocalDateTime agora) {
+        if (pedido.getDataInicio() == null) {
+            return pedido.getTaxaCancelamentoMinima();
+        }
+        long horasAteSessao = ChronoUnit.HOURS.between(agora, pedido.getDataInicio());
+        int faixaAtual = calcularFaixaCancelamentoPorHoras(horasAteSessao);
+        return Math.max(faixaAtual, pedido.getTaxaCancelamentoMinima());
+    }
+
+    private int calcularFaixaCancelamentoPorHoras(long horasAteSessao) {
+        if (horasAteSessao >= 168) return 0;  // 7 dias ou mais -> gratuito
+        if (horasAteSessao >= 72) return 15;  // 3 a 6 dias -> 15%
+        if (horasAteSessao >= 24) return 35;  // 1 a 2 dias -> 35%
+        return 50;                            // Menos de 24h -> 50%
+    }
+
+    private int calcularPercentualTaxaReagendamento(long horasAteSessao) {
+        if (horasAteSessao >= 168) return 0;  // 7 dias ou mais -> gratuito
+        if (horasAteSessao >= 72) return 10;  // 3 a 6 dias -> 10%
+        return 25;                            // 24h a 71h -> 25% (<24h é bloqueado)
+    }
+
+    private BigDecimal calcularValorPercentual(BigDecimal valorBase, int percentual) {
+        if (valorBase == null || valorBase.compareTo(BigDecimal.ZERO) <= 0 || percentual <= 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return valorBase
+                .multiply(BigDecimal.valueOf(percentual))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     }
 
     public Map<String, Object> obterQrCodeSessao(Long idPedido, String emailSolicitante) {
@@ -543,7 +799,7 @@ public class PedidoFacade {
         BigDecimal valorBase;
         boolean isVisitaBox = "VISITA_BOX".equalsIgnoreCase(servico);
         if (isVisitaBox) {
-            valorBase = new BigDecimal("890.00");
+            valorBase = new BigDecimal("190.00");
         } else if (automovel != null) {
             long dias = ChronoUnit.DAYS.between(dataInicio.toLocalDate(), dataFim.toLocalDate());
             if (dias <= 0) {

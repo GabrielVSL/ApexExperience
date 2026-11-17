@@ -2,8 +2,10 @@ package com.aluguel.facades;
 
 import com.aluguel.models.Agente;
 import com.aluguel.models.Automovel;
+import com.aluguel.models.Circuito;
 import com.aluguel.models.Cliente;
 import com.aluguel.models.Pedido;
+import com.aluguel.models.TrackSlot;
 import com.aluguel.repositories.AutomovelRepository;
 import com.aluguel.repositories.PedidoRepository;
 import com.aluguel.repositories.TrackSlotRepository;
@@ -306,7 +308,7 @@ class PedidoFacadeTest {
     }
 
     @Test
-    @DisplayName("Deve criar pedido VISITA_BOX sem automóvel com valor fixo de R$ 890,00")
+    @DisplayName("Deve criar pedido VISITA_BOX sem automóvel com valor fixo de R$ 190,00")
     void deveCriarVisitaBoxSemAutomovelEFixarValor() {
         Cliente cliente = new Cliente();
         cliente.setId(2L);
@@ -328,8 +330,8 @@ class PedidoFacadeTest {
         assertNotNull(criado);
         assertNull(criado.getAutomovel());
         assertEquals("VISITA_BOX", criado.getTipoServico());
-        assertEquals(new BigDecimal("890.00"), criado.getValorTotal());
-        assertEquals(new BigDecimal("890.00"), criado.getValorFinal());
+        assertEquals(new BigDecimal("190.00"), criado.getValorTotal());
+        assertEquals(new BigDecimal("190.00"), criado.getValorFinal());
         assertEquals("AGUARDANDO_APROVACAO", criado.getStatus());
         verify(pedidoRepository, never()).countAlugueisConflitantes(any(), any(), any());
     }
@@ -398,6 +400,119 @@ class PedidoFacadeTest {
             pedidoFacade.criarPedido(segunda, "cliente@apex.com")
         );
         assertTrue(ex.getMessage().toLowerCase().contains("manuten"));
+    }
+
+    @Test
+    @DisplayName("Deve reter taxa de 35% no cancelamento entre 24h e 71h antes da sessão e estornar 65%")
+    void deveReterTaxaCancelamentoProximoAData() {
+        TrackSlotRepository slotRepo = mock(TrackSlotRepository.class);
+        ApexPayFacade apexMock = mock(ApexPayFacade.class);
+        PedidoFacade facadeComApex = new PedidoFacade(pedidoRepository, automovelRepository, usuarioRepository, slotRepo, apexMock);
+
+        Cliente cliente = new Cliente();
+        cliente.setId(10L);
+        cliente.setEmail("piloto@apex.com");
+
+        Pedido pedido = new Pedido();
+        pedido.setId(201L);
+        pedido.setCliente(cliente);
+        pedido.setStatus("APROVADO");
+        pedido.setPagamentoStatus("PAGO_CARTEIRA");
+        pedido.setValorTotal(new BigDecimal("1000.00"));
+        pedido.setValorFinal(new BigDecimal("1000.00"));
+        pedido.setDataInicio(LocalDateTime.now().plusHours(36));
+        pedido.setDataFim(LocalDateTime.now().plusHours(40));
+
+        when(pedidoRepository.findById(201L)).thenReturn(Optional.of(pedido));
+        when(pedidoRepository.update(any(Pedido.class))).thenAnswer(i -> i.getArgument(0));
+
+        Pedido cancelado = facadeComApex.cancelarPedidoCliente(201L, "piloto@apex.com");
+
+        assertEquals("CANCELADO", cancelado.getStatus());
+        assertEquals("ESTORNADO", cancelado.getPagamentoStatus());
+        assertEquals(new BigDecimal("350.00"), cancelado.getTaxaAplicada());
+        verify(apexMock).estornarReserva(eq(cliente), eq(new BigDecimal("650.00")), any(), contains("35%"));
+    }
+
+    @Test
+    @DisplayName("Regra Anti-Burla: remarcar perto da data cobra taxa de remarcação e mantém taxa mínima no cancelamento futuro")
+    void deveAplicarTravaAntiBurlaAoReagendarPertoDaData() {
+        TrackSlotRepository slotRepo = mock(TrackSlotRepository.class);
+        ApexPayFacade apexMock = mock(ApexPayFacade.class);
+        PedidoFacade facadeComApex = new PedidoFacade(pedidoRepository, automovelRepository, usuarioRepository, slotRepo, apexMock);
+
+        Cliente cliente = new Cliente();
+        cliente.setId(11L);
+        cliente.setEmail("piloto@apex.com");
+        cliente.setSaldoCarteira(new BigDecimal("2000.00"));
+
+        Circuito circuito = new Circuito();
+        circuito.setId("interlagos");
+        circuito.setNome("Interlagos");
+        TrackSlot slotAntigo = new TrackSlot(circuito, LocalDate.now().plusDays(2), "MANHA", 10);
+        slotAntigo.setId(1L);
+        slotAntigo.setVagasOcupadas(2);
+
+        LocalDate dataDistante = proximoDiaAberto(12).toLocalDate();
+        TrackSlot slotNovo = new TrackSlot(circuito, dataDistante, "TARDE", 10);
+        slotNovo.setId(2L);
+        slotNovo.setVagasOcupadas(0);
+
+        Pedido pedido = new Pedido();
+        pedido.setId(202L);
+        pedido.setCliente(cliente);
+        pedido.setStatus("APROVADO");
+        pedido.setFormaPagamento("CARTEIRA_APEXPAY");
+        pedido.setPagamentoStatus("PAGO_CARTEIRA");
+        pedido.setValorTotal(new BigDecimal("1000.00"));
+        pedido.setValorFinal(new BigDecimal("1000.00"));
+        pedido.setTrackSlot(slotAntigo);
+        pedido.setDataInicio(LocalDateTime.now().plusHours(36));
+        pedido.setDataFim(LocalDateTime.now().plusHours(40));
+
+        when(pedidoRepository.findById(202L)).thenReturn(Optional.of(pedido));
+        when(slotRepo.findById(2L)).thenReturn(Optional.of(slotNovo));
+        when(pedidoRepository.update(any(Pedido.class))).thenAnswer(i -> i.getArgument(0));
+
+        Pedido remarcado = facadeComApex.reagendarPedidoCliente(202L, "piloto@apex.com", 2L);
+
+        assertEquals(1, remarcado.getReagendamentosCount());
+        assertEquals(35, remarcado.getTaxaCancelamentoMinima());
+        assertEquals(new BigDecimal("250.00"), remarcado.getTaxaAplicada());
+        verify(apexMock).debitarValorLiquido(eq(cliente), eq(new BigDecimal("250.00")), any(), contains("25%"));
+
+        // Tentar remarcar uma segunda vez deve falhar
+        assertThrows(IllegalStateException.class, () ->
+            facadeComApex.reagendarPedidoCliente(202L, "piloto@apex.com", 1L)
+        );
+
+        // Cancelar mesmo na data distante (12+ dias depois) ainda aplica a trava mínima de 35%
+        Pedido canceladoDepois = facadeComApex.cancelarPedidoCliente(202L, "piloto@apex.com");
+        assertEquals(new BigDecimal("350.00"), canceladoDepois.getTaxaAplicada());
+        verify(apexMock).estornarReserva(eq(cliente), eq(new BigDecimal("650.00")), any(), contains("35%"));
+    }
+
+    @Test
+    @DisplayName("Deve bloquear alteração de data com menos de 24 horas de antecedência")
+    void deveBloquearReagendamentoMenosDe24Horas() {
+        TrackSlotRepository slotRepo = mock(TrackSlotRepository.class);
+        PedidoFacade facadeComSlot = new PedidoFacade(pedidoRepository, automovelRepository, usuarioRepository, slotRepo, null);
+
+        Cliente cliente = new Cliente();
+        cliente.setEmail("piloto@apex.com");
+
+        Pedido pedido = new Pedido();
+        pedido.setId(203L);
+        pedido.setCliente(cliente);
+        pedido.setStatus("APROVADO");
+        pedido.setDataInicio(LocalDateTime.now().plusHours(10));
+        pedido.setDataFim(LocalDateTime.now().plusHours(14));
+
+        when(pedidoRepository.findById(203L)).thenReturn(Optional.of(pedido));
+
+        assertThrows(IllegalStateException.class, () ->
+            facadeComSlot.reagendarPedidoCliente(203L, "piloto@apex.com", 99L)
+        );
     }
 
 }

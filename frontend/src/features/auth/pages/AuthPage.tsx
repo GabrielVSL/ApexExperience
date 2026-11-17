@@ -326,18 +326,18 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
           gap={3}
           roundness={0.75}
           interactive
-          cursorStrength={1}
-          cursorSize={40}
-          swirl={0}
-          trail={1.4}
-          lean={0}
+          cursorStrength={1.6}
+          cursorSize={95}
+          swirl={0.65}
+          trail={1.6}
+          lean={0.6}
           intro
           scale={1.5}
-          speed={0.6}
+          speed={1.0}
           direction={250}
           chop={0.55}
-          stretch={0}
-          glint={0.7}
+          stretch={0.28}
+          glint={0.85}
           contrast={1.25}
           perspective={0.55}
           fog={0.55}

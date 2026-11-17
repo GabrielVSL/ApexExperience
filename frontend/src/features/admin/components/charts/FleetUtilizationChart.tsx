@@ -1,47 +1,24 @@
 'use client';
 
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-  CartesianGrid,
-} from 'recharts';
+import { motion } from 'framer-motion';
 
 interface FleetUtilizationChartProps {
   data: Record<string, number>;
 }
 
 export default function FleetUtilizationChart({ data }: FleetUtilizationChartProps) {
-  const chartData = Object.entries(data || {})
+  const items = Object.entries(data || {})
     .map(([modelo, total]) => ({
-      modelo: modelo.replace('Competition Coupé', 'M8 Coupé').replace('V10 Performance', 'R8 Performance'),
-      modeloCompleto: modelo,
+      modelo,
       total: Number(total) || 0,
     }))
+    .filter((i) => i.total > 0)
     .sort((a, b) => b.total - a.total);
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const item = payload[0].payload;
-      return (
-        <div className="rounded-2xl bg-[#0A0D14]/95 border border-white/15 p-3.5 shadow-2xl backdrop-blur-xl font-mono text-xs">
-          <p className="text-white/60 font-semibold text-[11px] uppercase tracking-wider mb-1">
-            {item.modeloCompleto}
-          </p>
-          <p className="text-emerald-400 font-bold text-sm">
-            {item.total} sessão(ões) em pista
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
+  const totalSessoes = items.reduce((acc, i) => acc + i.total, 0);
+  const maxValor = items[0]?.total || 1;
 
-  if (chartData.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-xs text-white/40">
         Nenhum registro de uso da frota até o momento.
@@ -50,38 +27,53 @@ export default function FleetUtilizationChart({ data }: FleetUtilizationChartPro
   }
 
   return (
-    <div className="w-full h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" vertical={false} />
-          <XAxis
-            dataKey="modelo"
-            stroke="rgba(255, 255, 255, 0.5)"
-            tickLine={false}
-            axisLine={false}
-            interval={0}
-            angle={-20}
-            textAnchor="end"
-            tick={{ fontSize: 10 }}
-          />
-          <YAxis
-            stroke="rgba(255, 255, 255, 0.4)"
-            tickLine={false}
-            axisLine={false}
-            allowDecimals={false}
-            tick={{ fontSize: 10, fontFamily: 'monospace' }}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-            {chartData.map((_, idx) => (
-              <Cell
-                key={`cell-${idx}`}
-                fill={idx === 0 ? '#10B981' : idx < 3 ? '#34D399' : 'rgba(16, 185, 129, 0.4)'}
+    <div className="space-y-3.5 max-h-[304px] overflow-y-auto pr-1 custom-scrollbar">
+      {items.map((item, idx) => {
+        const sharePercent = totalSessoes > 0 ? Math.round((item.total / totalSessoes) * 100) : 0;
+        const barWidth = Math.max(Math.round((item.total / maxValor) * 100), 6);
+        const isTop = idx === 0;
+
+        return (
+          <div key={item.modelo} className="rounded-2xl bg-[#121622] p-3.5 space-y-2">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 tabular-nums ${
+                    isTop
+                      ? 'bg-emerald-500 text-[#08090C]'
+                      : 'bg-white/[0.06] text-white/65'
+                  }`}
+                >
+                  {idx + 1}
+                </span>
+                <span className="font-medium text-white truncate">{item.modelo}</span>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0 tabular-nums">
+                <span className="text-[11px] text-white/45">{sharePercent}%</span>
+                <span className="font-semibold text-emerald-300">
+                  {item.total} {item.total === 1 ? 'sessão' : 'sessões'}
+                </span>
+              </div>
+            </div>
+
+            <div className="h-2 w-full rounded-full bg-[#08090C] overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${barWidth}%` }}
+                transition={{ duration: 0.45, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
+                className={`h-full rounded-full ${
+                  isTop
+                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-300'
+                    : idx < 3
+                    ? 'bg-emerald-400/75'
+                    : 'bg-white/25'
+                }`}
               />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

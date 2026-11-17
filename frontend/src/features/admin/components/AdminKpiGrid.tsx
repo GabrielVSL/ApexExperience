@@ -38,65 +38,81 @@ export default function AdminKpiGrid({
   const { formatPrice } = useCurrencyStore();
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-sans">
       {/* CARD 1: LUCRO LÍQUIDO OPERACIONAL */}
-      <div className="p-5 rounded-2xl bg-[#11131A] border border-white/10 hover:border-[#FF1717]/40 transition-colors">
-        <div className="flex items-center justify-between text-xs text-white/50 mb-2">
-          <span>Lucro Líquido Operacional</span>
-          <TrendingUp size={16} className="text-emerald-400" />
+      <div className="p-6 rounded-3xl bg-[#0D1017] hover:bg-[#10141E] transition-colors space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-white/55">Lucro Líquido Operacional</span>
+          <span className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+            <TrendingUp size={16} />
+          </span>
         </div>
-        <p className="text-2xl font-semibold text-white tabular-nums tracking-tight">
+        <p className="text-2xl sm:text-[26px] font-medium text-white tabular-nums tracking-tight leading-none">
           {formatPrice(lucroLiquidoEstimado)}
         </p>
-        <p className="text-[11px] font-mono text-white/45 mt-1.5 flex items-center justify-between">
-          <span>Receita confirmada:</span>
-          <span className="text-white/80">{formatPrice(faturamentoConfirmado)}</span>
-        </p>
+        <div className="pt-1 flex items-center justify-between text-xs text-white/45">
+          <span>Receita confirmada</span>
+          <span className="text-white/80 font-medium tabular-nums">
+            {formatPrice(faturamentoConfirmado)}
+          </span>
+        </div>
       </div>
 
       {/* CARD 2: SESSÕES DE PISTA & GRID */}
-      <div className="p-5 rounded-2xl bg-[#11131A] border border-white/10 hover:border-[#FF1717]/40 transition-colors">
-        <div className="flex items-center justify-between text-xs text-white/50 mb-2">
-          <span>Sessões & Grid de Pista</span>
-          <CalendarCheck size={16} className="text-[#FF1717]" />
+      <div className="p-6 rounded-3xl bg-[#0D1017] hover:bg-[#10141E] transition-colors space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-white/55">Sessões & Grid de Pista</span>
+          <span className="w-8 h-8 rounded-xl bg-[#FF1717]/15 text-[#FF1717] flex items-center justify-center">
+            <CalendarCheck size={16} />
+          </span>
         </div>
-        <p className="text-2xl font-semibold text-white tabular-nums tracking-tight">
+        <p className="text-2xl sm:text-[26px] font-medium text-white tabular-nums tracking-tight leading-none">
           {totalSessoesAgendadas}
         </p>
-        <p className="text-[11px] font-mono text-white/45 mt-1.5 flex items-center justify-between">
-          <span>Homologadas: {sessoesConfirmadas}</span>
-          <span className="text-amber-400 font-semibold">{sessoesPendentes} pendentes</span>
-        </p>
+        <div className="pt-1 flex items-center justify-between text-xs text-white/45">
+          <span>{sessoesConfirmadas} confirmadas</span>
+          <span className={sessoesPendentes > 0 ? 'text-amber-300 font-medium' : 'text-white/45'}>
+            {sessoesPendentes} pendentes
+          </span>
+        </div>
       </div>
 
       {/* CARD 3: DÍVIDA ATIVA & INADIMPLÊNCIA */}
-      <div className="p-5 rounded-2xl bg-[#11131A] border border-white/10 hover:border-rose-500/40 transition-colors">
-        <div className="flex items-center justify-between text-xs text-white/50 mb-2">
-          <span>Dívida Ativa ApexPay</span>
-          <AlertTriangle size={16} className="text-rose-400" />
+      <div className="p-6 rounded-3xl bg-[#0D1017] hover:bg-[#10141E] transition-colors space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-white/55">Dívida Ativa ApexPay</span>
+          <span className="w-8 h-8 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center">
+            <AlertTriangle size={16} />
+          </span>
         </div>
-        <p className="text-2xl font-semibold text-rose-400 tabular-nums tracking-tight">
+        <p className="text-2xl sm:text-[26px] font-medium text-rose-300 tabular-nums tracking-tight leading-none">
           {formatPrice(dividaAtivaTotal)}
         </p>
-        <p className="text-[11px] font-mono text-white/45 mt-1.5 flex items-center justify-between">
-          <span className="text-rose-300 font-medium">{pilotosInadimplentes} inadimplente(s)</span>
-          <span className="text-emerald-400">{pilotosEmDia} em dia</span>
-        </p>
+        <div className="pt-1 flex items-center justify-between text-xs">
+          <span className={pilotosInadimplentes > 0 ? 'text-rose-300' : 'text-white/45'}>
+            {pilotosInadimplentes} inadimplente{pilotosInadimplentes === 1 ? '' : 's'}
+          </span>
+          <span className="text-emerald-300/90">{pilotosEmDia} em dia</span>
+        </div>
       </div>
 
       {/* CARD 4: CUSTÓDIA APEXPAY & SINISTROS */}
-      <div className="p-5 rounded-2xl bg-[#11131A] border border-white/10 hover:border-emerald-500/40 transition-colors">
-        <div className="flex items-center justify-between text-xs text-white/50 mb-2">
-          <span>Custódia ApexPay Sandbox</span>
-          <Wallet size={16} className="text-white/70" />
+      <div className="p-6 rounded-3xl bg-[#0D1017] hover:bg-[#10141E] transition-colors space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-white/55">Custódia ApexPay Sandbox</span>
+          <span className="w-8 h-8 rounded-xl bg-white/[0.06] text-white/80 flex items-center justify-center">
+            <Wallet size={16} />
+          </span>
         </div>
-        <p className="text-2xl font-semibold text-white tabular-nums tracking-tight">
+        <p className="text-2xl sm:text-[26px] font-medium text-white tabular-nums tracking-tight leading-none">
           {formatPrice(saldoTotalCustodiado)}
         </p>
-        <p className="text-[11px] font-mono text-white/45 mt-1.5 flex items-center justify-between">
+        <div className="pt-1 flex items-center justify-between text-xs text-white/45">
           <span>{totalPilotosCadastrados} pilotos</span>
-          <span className="text-rose-300">Sinistros: {formatPrice(totalSinistrosCobrados)}</span>
-        </p>
+          <span className="text-white/65 tabular-nums">
+            Sinistros: {formatPrice(totalSinistrosCobrados)}
+          </span>
+        </div>
       </div>
     </div>
   );

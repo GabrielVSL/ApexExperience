@@ -58,7 +58,6 @@ export default function UserManagementTable({
   const [filter, setFilter] = useState<ClientFilterType>('TODOS');
 
   const filteredClients = (clients || []).filter((c) => {
-    // Busca textual
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       const matchNome = c.nome?.toLowerCase().includes(q);
@@ -68,35 +67,36 @@ export default function UserManagementTable({
       if (!matchNome && !matchEmail && !matchCnh && !matchTel) return false;
     }
 
-    // Filtros por pílula
     if (filter === 'DEVEDORES') return c.inadimplente;
     if (filter === 'EM_DIA') return !c.inadimplente;
     if (filter === 'SEM_CNH') return !c.cnhNumero || c.cnhNumero.trim() === '';
-    if (filter === 'BLOQUEADOS') return c.statusConta === 'BLOQUEADO_RESERVAS' || c.statusConta === 'SUSPENSO';
+    if (filter === 'BLOQUEADOS') {
+      return c.statusConta === 'BLOQUEADO_RESERVAS' || c.statusConta === 'SUSPENSO';
+    }
     return true;
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 font-sans">
       {/* Barra de Filtros & Busca */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex flex-1 items-center gap-2 max-w-lg">
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <div className="flex flex-1 items-center gap-2.5 max-w-xl">
           <div className="relative flex-1">
             <input
               type="text"
               placeholder="Buscar piloto por nome, e-mail, CNH ou telefone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-white/[0.03] border border-white/10 focus:border-[#FF1717] px-3.5 py-2 rounded-xl text-xs text-white outline-none pl-9 transition-colors"
+              className="w-full bg-[#0D1017] focus:bg-[#121622] px-4 py-2.5 rounded-full text-xs text-white placeholder:text-white/35 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-10 transition-all"
             />
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
           </div>
 
           {onOpenCreateModal && (
             <button
               type="button"
               onClick={onOpenCreateModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#FF1717] hover:bg-[#E10600] text-white text-xs font-semibold shadow-md transition-all cursor-pointer whitespace-nowrap active:scale-95"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-all cursor-pointer whitespace-nowrap active:scale-95"
               title="Cadastrar novo piloto ou administrador"
             >
               <Plus size={14} />
@@ -105,12 +105,12 @@ export default function UserManagementTable({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1 bg-[#0D1017] p-1 rounded-full self-start lg:self-auto">
           {(
             [
               { id: 'TODOS', label: 'Todos' },
               { id: 'DEVEDORES', label: 'Inadimplentes' },
-              { id: 'EM_DIA', label: 'Em Dia' },
+              { id: 'EM_DIA', label: 'Em dia' },
               { id: 'SEM_CNH', label: 'Sem CNH' },
               { id: 'BLOQUEADOS', label: 'Bloqueados' },
             ] as const
@@ -119,131 +119,128 @@ export default function UserManagementTable({
               key={item.id}
               type="button"
               onClick={() => setFilter(item.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-mono transition-colors cursor-pointer border ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
                 filter === item.id
-                  ? 'bg-white text-[#08090C] border-white font-semibold shadow-sm'
-                  : 'bg-white/[0.03] text-white/60 border-white/10 hover:text-white'
+                  ? 'bg-white text-[#08090C]'
+                  : 'text-white/60 hover:text-white'
               }`}
             >
               {item.label}
             </button>
           ))}
-          <span className="text-[11px] font-mono text-white/40 pl-2">
-            {filteredClients.length} piloto(s)
+          <span className="text-[11px] text-white/40 px-2.5 tabular-nums">
+            {filteredClients.length} {filteredClients.length === 1 ? 'piloto' : 'pilotos'}
           </span>
         </div>
       </div>
 
       {/* Tabela de Pilotos */}
       {filteredClients.length === 0 ? (
-        <div className="p-12 rounded-2xl bg-white/[0.02] border border-white/10 text-center text-xs text-white/50 space-y-1.5">
+        <div className="p-12 rounded-3xl bg-[#0D1017] text-center text-xs text-white/50 space-y-2">
           <AlertCircle size={20} className="mx-auto text-white/30" />
           <p>Nenhum piloto encontrado para os critérios de busca.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.015]">
+        <div className="overflow-x-auto rounded-3xl bg-[#0D1017]">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-white/10 text-white/50 font-mono uppercase text-[10px]">
+            <thead className="border-b border-white/[0.06] text-white/45 text-[11px] font-medium">
               <tr>
-                <th className="py-3.5 px-4">Piloto & Contato</th>
-                <th className="py-3.5 px-4">Habilitação (CNH)</th>
-                <th className="py-3.5 px-4">Recargas Sandbox</th>
-                <th className="py-3.5 px-4">Saldo Carteira</th>
-                <th className="py-3.5 px-4">Status Conta</th>
-                <th className="py-3.5 px-4 text-right">Ações de Gestão</th>
+                <th className="py-4 px-5">Piloto e Contato</th>
+                <th className="py-4 px-5">Habilitação (CNH)</th>
+                <th className="py-4 px-5">Total Depositado</th>
+                <th className="py-4 px-5">Saldo Atual</th>
+                <th className="py-4 px-5">Situação</th>
+                <th className="py-4 px-5 text-right">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.06]">
+            <tbody className="divide-y divide-white/[0.05]">
               {filteredClients.map((c) => (
                 <tr key={c.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3.5 px-4">
+                  <td className="py-4 px-5">
                     <p className="font-medium text-white">{c.nome}</p>
-                    <p className="text-[11px] text-white/45 font-mono">{c.email}</p>
+                    <p className="text-[11px] text-white/45 mt-0.5">{c.email}</p>
                     {c.telefone && (
-                      <p className="text-[10px] text-white/40 font-mono flex items-center gap-1 mt-0.5">
-                        <Phone size={10} className="text-[#25D366]" />
+                      <p className="text-[11px] text-white/40 flex items-center gap-1 mt-0.5 tabular-nums">
+                        <Phone size={10} className="text-emerald-400" />
                         <span>{c.telefone}</span>
                       </p>
                     )}
                   </td>
 
-                  <td className="py-3.5 px-4 font-mono">
+                  <td className="py-4 px-5 tabular-nums">
                     {c.cnhNumero ? (
-                      <div className="flex items-center gap-1.5 text-white/80">
-                        <ShieldCheck size={13} className="text-emerald-400" />
+                      <div className="flex items-center gap-1.5 text-white/85">
+                        <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
                         <span>{c.cnhNumero}</span>
                         {c.cnhCategoria && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-white/10 text-white/70">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#121622] text-white/70">
                             {c.cnhCategoria}
                           </span>
                         )}
                       </div>
                     ) : (
-                      <span className="text-white/40 text-[11px] italic">Não informada</span>
+                      <span className="text-white/40 text-xs">Não informada</span>
                     )}
                   </td>
 
-                  <td className="py-3.5 px-4 font-mono text-white/80">
+                  <td className="py-4 px-5 text-white/80 tabular-nums">
                     {formatPrice(c.totalDepositadoHistorico)}
                   </td>
 
                   <td
-                    className={`py-3.5 px-4 font-mono font-semibold ${
-                      c.saldoCarteira < 0 ? 'text-rose-400' : 'text-emerald-400'
+                    className={`py-4 px-5 font-semibold tabular-nums ${
+                      c.saldoCarteira < 0 ? 'text-rose-300' : 'text-emerald-300'
                     }`}
                   >
                     {formatPrice(c.saldoCarteira)}
                   </td>
 
-                  <td className="py-3.5 px-4">
+                  <td className="py-4 px-5">
                     <div className="flex flex-col gap-1 items-start">
                       <span
-                        className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${
+                        className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full ${
                           c.inadimplente
-                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            ? 'bg-rose-500/15 text-rose-300'
+                            : 'bg-emerald-500/15 text-emerald-300'
                         }`}
                       >
-                        {c.statusFinanceiro}
+                        {c.inadimplente ? 'Inadimplente' : 'Regular'}
                       </span>
                       {c.statusConta && c.statusConta !== 'ATIVO' && (
-                        <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                          {c.statusConta}
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300">
+                          {c.statusConta === 'BLOQUEADO_RESERVAS' ? 'Bloqueado' : c.statusConta}
                         </span>
                       )}
                     </div>
                   </td>
 
-                  <td className="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
-                    {/* Botão de Edição Completa da Ficha (Drawer) */}
+                  <td className="py-4 px-5 text-right whitespace-nowrap space-x-1.5">
                     <button
                       type="button"
                       onClick={() => onOpenEditDrawer(c.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white text-[11px] font-medium cursor-pointer transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white text-xs font-medium cursor-pointer transition-colors"
                       title="Editar ficha completa do piloto"
                     >
                       <Edit3 size={12} />
                       <span>Editar Ficha</span>
                     </button>
 
-                    {/* Botão de Crédito Administrativo */}
                     <button
                       type="button"
                       onClick={() => onOpenCreditModal(c)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-300 text-[11px] font-medium cursor-pointer transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-medium cursor-pointer transition-colors"
                       title="Lançar recarga ou crédito de saldo"
                     >
                       <Wallet size={12} />
                       <span>Creditar</span>
                     </button>
 
-                    {/* Botão de Aplicação de Juros Diários para Inadimplentes */}
                     {c.inadimplente && (
                       <button
                         type="button"
                         disabled={processingId === `interest-${c.id}`}
                         onClick={() => onApplyInterest(c.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 text-rose-200 text-[11px] font-medium cursor-pointer transition-colors"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-medium cursor-pointer transition-colors"
                         title="Aplicar juros contratuais de atraso (0,1%/dia)"
                       >
                         <Percent size={11} />
@@ -251,13 +248,12 @@ export default function UserManagementTable({
                       </button>
                     )}
 
-                    {/* Ação de Exclusão ou Indicador de Admin Protegido */}
                     {c.email === 'admin@apex.com' || (c.role && c.role.includes('ADMIN')) ? (
                       <span
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-mono"
-                        title="Conta Administrador protegida contra exclusão e alteração de senha"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 text-[11px] font-medium"
+                        title="Conta Administrador protegida"
                       >
-                        <Lock size={10} />
+                        <Lock size={11} />
                         <span>Protegido</span>
                       </span>
                     ) : (
@@ -265,10 +261,10 @@ export default function UserManagementTable({
                         <button
                           type="button"
                           onClick={() => onDeleteUser(c)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 text-rose-300 text-[11px] font-medium cursor-pointer transition-colors"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-medium cursor-pointer transition-colors"
                           title="Excluir piloto do sistema"
                         >
-                          <Trash2 size={11} />
+                          <Trash2 size={12} />
                           <span>Excluir</span>
                         </button>
                       )

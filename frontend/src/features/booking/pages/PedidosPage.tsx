@@ -19,6 +19,7 @@ import {
   RefreshCw,
   QrCode,
   ScanLine,
+  ShieldAlert,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { toast } from '@/store/useToastStore';
@@ -128,6 +129,11 @@ export default function PedidosPage() {
   const [availableSlots, setAvailableSlots] = useState<TrackSlotOption[]>([]);
   const [editSlotId, setEditSlotId] = useState<number | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Modal de Sinistro / Avaria em pista
+  const [sinistroModalPedido, setSinistroModalPedido] = useState<Pedido | null>(null);
+  const [sinistroValor, setSinistroValor] = useState('1500');
+  const [sinistroMotivo, setSinistroMotivo] = useState('Avaria em para-choque / caixa de brita');
 
   const fetchPedidos = async () => {
     try {
@@ -252,6 +258,25 @@ export default function PedidosPage() {
       toast.success('Contraproposta de slot/horário enviada ao piloto!');
     } catch (error: any) {
       toast.error(error.response?.data?.message || 'Erro ao enviar contraproposta.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRegistrarSinistro = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sinistroModalPedido) return;
+    try {
+      setIsProcessing(true);
+      await api.post(`/api/admin/pedidos/${sinistroModalPedido.id}/sinistro`, {
+        valor: Number(sinistroValor),
+        motivo: sinistroMotivo.trim() || 'Ocorrência em pista',
+      });
+      toast.success('Ocorrência registrada e franquia lançada na carteira ApexPay do piloto!');
+      setSinistroModalPedido(null);
+      await fetchPedidos();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Erro ao registrar ocorrência.');
     } finally {
       setIsProcessing(false);
     }
@@ -741,27 +766,42 @@ export default function PedidosPage() {
                     </div>
                   )
                 ) : (
-                  <div
-                    className={`w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 text-xs font-mono uppercase tracking-wider border ${
-                      pedidoSelecionado.status === 'APROVADO'
-                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                        : pedidoSelecionado.status === 'REVISAO_CLIENTE'
-                          ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
-                          : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-                    }`}
-                  >
-                    {pedidoSelecionado.status === 'REVISAO_CLIENTE' ? (
-                      <Clock size={16} />
-                    ) : pedidoSelecionado.status === 'APROVADO' ? (
-                      <CheckCircle2 size={16} />
-                    ) : (
-                      <XCircle size={16} />
-                    )}
-                    {pedidoSelecionado.status === 'REVISAO_CLIENTE'
-                      ? 'AGUARDANDO CLIENTE'
-                      : pedidoSelecionado.status === 'APROVADO'
-                        ? 'SESSÃO CONFIRMADA'
-                        : `PEDIDO ${pedidoSelecionado.status}`}
+                  <div className="space-y-2.5">
+                    <div
+                      className={`w-full py-3.5 rounded-full text-center flex items-center justify-center gap-2 text-xs font-medium ${
+                        pedidoSelecionado.status === 'APROVADO'
+                          ? 'bg-emerald-500/15 text-emerald-300'
+                          : pedidoSelecionado.status === 'REVISAO_CLIENTE'
+                            ? 'bg-purple-500/15 text-purple-300'
+                            : 'bg-rose-500/15 text-rose-300'
+                      }`}
+                    >
+                      {pedidoSelecionado.status === 'REVISAO_CLIENTE' ? (
+                        <Clock size={16} />
+                      ) : pedidoSelecionado.status === 'APROVADO' ? (
+                        <CheckCircle2 size={16} />
+                      ) : (
+                        <XCircle size={16} />
+                      )}
+                      {pedidoSelecionado.status === 'REVISAO_CLIENTE'
+                        ? 'Aguardando resposta do piloto'
+                        : pedidoSelecionado.status === 'APROVADO'
+                          ? 'Sessão confirmada'
+                          : `Sessão ${pedidoSelecionado.status.toLowerCase()}`}
+                    </div>
+
+                    {user?.role === 'ADMIN' &&
+                      pedidoSelecionado.status === 'APROVADO' &&
+                      pedidoSelecionado.tipoServico !== 'VISITA_BOX' && (
+                        <button
+                          type="button"
+                          onClick={() => setSinistroModalPedido(pedidoSelecionado)}
+                          className="w-full py-3 px-4 rounded-full text-xs font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                        >
+                          <ShieldAlert size={15} />
+                          <span>Registrar sinistro ou avaria em pista</span>
+                        </button>
+                      )}
                   </div>
                 )}
               </div>
@@ -794,6 +834,66 @@ export default function PedidosPage() {
         onClose={() => setIsValidatorOpen(false)}
         onValidated={fetchPedidos}
       />
+
+      {sinistroModalPedido && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#08090C]/80 backdrop-blur-md font-sans"
+          onClick={() => setSinistroModalPedido(null)}
+        >
+          <form
+            onSubmit={handleRegistrarSinistro}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-[#0D1017] shadow-2xl space-y-4"
+          >
+            <h3 className="text-lg font-medium text-white flex items-center gap-2">
+              <ShieldAlert size={18} className="text-rose-400" />
+              Registrar Sinistro / Avaria
+            </h3>
+            <p className="text-xs text-white/60 leading-relaxed">
+              Piloto: <strong className="text-white">{sinistroModalPedido.cliente?.nome}</strong> (
+              {sinistroModalPedido.trackingCode || `#${sinistroModalPedido.id}`}). O valor da franquia será lançado diretamente na carteira ApexPay do piloto.
+            </p>
+            <div>
+              <label className="text-xs text-white/60 block mb-1.5">Valor da franquia (R$)</label>
+              <input
+                type="number"
+                min="1"
+                step="50"
+                required
+                value={sinistroValor}
+                onChange={(e) => setSinistroValor(e.target.value)}
+                className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-sm text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 tabular-nums transition-all"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/60 block mb-1.5">Descrição da ocorrência</label>
+              <input
+                type="text"
+                required
+                value={sinistroMotivo}
+                onChange={(e) => setSinistroMotivo(e.target.value)}
+                className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-3 rounded-2xl text-xs text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSinistroModalPedido(null)}
+                className="flex-1 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/80 cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isProcessing}
+                className="flex-1 py-2.5 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Confirmar lançamento
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

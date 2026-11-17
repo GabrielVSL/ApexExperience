@@ -51,7 +51,6 @@ export default function UserCreateModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Form states
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -124,7 +123,7 @@ export default function UserCreateModal({
       }
 
       await api.post('/api/admin/usuarios', payload);
-      toast.success(`Piloto ${nome} cadastrado com sucesso no Paddock!`);
+      toast.success(`Piloto ${nome} cadastrado com sucesso!`);
       resetForm();
       onUserCreated();
       onClose();
@@ -139,101 +138,110 @@ export default function UserCreateModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 sm:p-6 overflow-y-auto font-sans">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-black/75 backdrop-blur-md"
+            className="fixed inset-0 bg-[#08090C]/80 backdrop-blur-md"
           />
 
-          {/* Modal Container */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Novo Cadastro no Paddock"
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
-            className="relative z-10 w-full max-w-2xl bg-[#0D1017] border border-white/15 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[90vh]"
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            className="relative z-10 w-full max-w-2xl bg-[#0D1017] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
           >
             {/* Header */}
-            <div className="p-6 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#0A0D14]">
+            <div className="px-6 py-5 border-b border-white/[0.06] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#FF1717]/15 border border-[#FF1717]/30 flex items-center justify-center text-[#FF1717]">
-                  <UserPlus size={20} />
+                <div className="w-10 h-10 rounded-2xl bg-[#FF1717]/15 flex items-center justify-center text-[#FF1717]">
+                  <UserPlus size={19} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white uppercase tracking-wider font-mono">
-                    Novo Cadastro no Paddock
-                  </h3>
+                  <h3 className="text-base font-medium text-white">Novo Cadastro no Paddock</h3>
                   <p className="text-xs text-white/50">
-                    Cadastrar novo piloto ou administrador executivo
+                    Cadastrar novo piloto ou administrador
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={handleClose}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
+                className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.08] flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            {/* Form Body Scrollable */}
-            <form id="create-user-form" onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-              {/* Seletor de Role (Nível de Acesso) */}
+            {/* Form Body */}
+            <form
+              id="create-user-form"
+              onSubmit={handleSubmit}
+              className="p-6 space-y-4 overflow-y-auto flex-1"
+            >
               <div>
-                <label className="block text-xs font-mono uppercase text-white/70 mb-2">
-                  Tipo de Conta & Acesso
+                <label className="block text-xs font-medium text-white/60 mb-2">
+                  Tipo de conta
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setRole('CLIENTE')}
-                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl text-left transition-all cursor-pointer ${
                       role === 'CLIENTE'
-                        ? 'bg-[#FF1717]/15 border-[#FF1717] text-white shadow-md'
-                        : 'bg-white/[0.02] border-white/10 text-white/60 hover:text-white'
+                        ? 'bg-white text-[#08090C]'
+                        : 'bg-[#121622] text-white/75 hover:text-white'
                     }`}
                   >
-                    <p className="text-xs font-bold uppercase font-mono">Piloto (Cliente)</p>
-                    <p className="text-[11px] text-white/50 mt-0.5">Acesso a reservas de pista, telemetria e ApexPay</p>
+                    <p className="text-xs font-semibold">Piloto (Cliente)</p>
+                    <p
+                      className={`text-[11px] mt-0.5 ${
+                        role === 'CLIENTE' ? 'text-[#08090C]/65' : 'text-white/45'
+                      }`}
+                    >
+                      Acesso a reservas, sessões e ApexPay
+                    </p>
                   </button>
                   <button
                     type="button"
                     onClick={() => setRole('ADMIN')}
-                    className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                    className={`p-3.5 rounded-2xl text-left transition-all cursor-pointer ${
                       role === 'ADMIN'
-                        ? 'bg-amber-500/15 border-amber-500 text-white shadow-md'
-                        : 'bg-white/[0.02] border-white/10 text-white/60 hover:text-white'
+                        ? 'bg-[#FF1717] text-white'
+                        : 'bg-[#121622] text-white/75 hover:text-white'
                     }`}
                   >
-                    <p className="text-xs font-bold uppercase font-mono text-amber-400">Administrador</p>
-                    <p className="text-[11px] text-white/50 mt-0.5">Acesso integral ao Painel Executivo e Race Control</p>
+                    <p className="text-xs font-semibold">Administrador</p>
+                    <p
+                      className={`text-[11px] mt-0.5 ${
+                        role === 'ADMIN' ? 'text-white/85' : 'text-white/45'
+                      }`}
+                    >
+                      Acesso completo ao painel administrativo
+                    </p>
                   </button>
                 </div>
               </div>
 
-              {/* Linha 1: Nome e E-mail */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Nome Completo *
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">Nome completo *</label>
                   <input
                     type="text"
                     required
                     placeholder="Ex: Gabriel Verstappen"
                     value={nome}
                     onChange={(e) => setNome(e.target.value)}
-                    className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none"
+                    className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    E-mail de Acesso *
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">E-mail de acesso *</label>
                   <div className="relative">
                     <input
                       type="email"
@@ -241,18 +249,20 @@ export default function UserCreateModal({
                       placeholder="piloto@apex.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 transition-all"
                     />
-                    <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <Mail
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Linha 2: Senha Provisória e WhatsApp */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Senha Provisória (Mín. 6) *
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    Senha provisória (mín. 6) *
                   </label>
                   <div className="relative">
                     <input
@@ -262,20 +272,23 @@ export default function UserCreateModal({
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 pr-9"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 pr-9 transition-all"
                     />
-                    <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <Lock
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+                    />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white cursor-pointer"
                     >
                       {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
+                  <label className="block text-xs text-white/60 mb-1.5">
                     WhatsApp / Telefone
                   </label>
                   <div className="relative">
@@ -284,38 +297,36 @@ export default function UserCreateModal({
                       placeholder="(11) 98765-4321"
                       value={telefone}
                       onChange={(e) => setTelefone(maskPhone(e.target.value))}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 tabular-nums transition-all"
                     />
-                    <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
+                    <Phone
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Linha 3: CPF e CNH */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    CPF
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">CPF</label>
                   <input
                     type="text"
                     placeholder="000.000.000-00"
                     value={cpf}
                     onChange={(e) => setCpf(maskCPF(e.target.value))}
-                    className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none"
+                    className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 tabular-nums transition-all"
                   />
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-mono uppercase text-white/60">
-                      Número CNH
-                    </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs text-white/60">Número CNH</label>
                     <button
                       type="button"
                       onClick={() => setCnhNumero(CNH_TESTE_SUGERIDA)}
-                      className="text-[9px] text-[#FF1717] hover:underline font-mono"
+                      className="text-[11px] text-[#FF1717] hover:underline cursor-pointer"
                     >
-                      Usar CNH Teste
+                      Usar CNH teste
                     </button>
                   </div>
                   <div className="relative">
@@ -324,47 +335,50 @@ export default function UserCreateModal({
                       placeholder="Ex: 52798802310"
                       value={cnhNumero}
                       onChange={(e) => setCnhNumero(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 font-mono"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 tabular-nums transition-all"
                     />
-                    <ShieldCheck size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
+                    <ShieldCheck
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400"
+                    />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Categoria CNH
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">Categoria CNH</label>
                   <select
                     value={cnhCategoria}
                     onChange={(e) => setCnhCategoria(e.target.value)}
-                    className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none cursor-pointer"
+                    className="w-full bg-[#121622] focus:bg-[#171C2B] px-3.5 py-2.5 rounded-2xl text-xs text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 cursor-pointer transition-all"
                   >
-                    <option value="B">B (Automóvel / Supercarro)</option>
-                    <option value="C">C (Carga / Apoio)</option>
-                    <option value="D">D (Transporte Paddock)</option>
-                    <option value="E">E (Especial Competição)</option>
+                    <option value="B">B (Carros)</option>
+                    <option value="C">C (Carga)</option>
+                    <option value="D">D (Passageiros)</option>
+                    <option value="E">E (Especiais)</option>
                   </select>
                 </div>
               </div>
 
-              {/* Linha 4: Data de Nascimento e Saldo Inicial ApexPay */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Data de Nascimento (Mín. 21 anos)
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    Data de nascimento (mín. 21 anos)
                   </label>
                   <div className="relative">
                     <input
                       type="date"
                       value={dataNascimento}
                       onChange={(e) => setDataNascimento(e.target.value)}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 tabular-nums transition-all"
                     />
-                    <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <Calendar
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+                    />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Crédito Inicial ApexPay (R$, opcional)
+                  <label className="block text-xs text-white/60 mb-1.5">
+                    Crédito inicial ApexPay (R$, opcional)
                   </label>
                   <div className="relative">
                     <input
@@ -373,53 +387,54 @@ export default function UserCreateModal({
                       placeholder="0.00"
                       value={saldoInicial}
                       onChange={(e) => setSaldoInicial(e.target.value)}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9 font-mono"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 tabular-nums transition-all"
                     />
-                    <Wallet size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
+                    <Wallet
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Linha 5: Endereço e Status Inicial */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Endereço / Box Paddock
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">Endereço</label>
                   <div className="relative">
                     <input
                       type="text"
-                      placeholder="Ex: Av. Interlagos, 1000 - Box 04"
+                      placeholder="Rua, número e cidade"
                       value={endereco}
                       onChange={(e) => setEndereco(e.target.value)}
-                      className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none pl-9"
+                      className="w-full bg-[#121622] focus:bg-[#171C2B] px-4 py-2.5 rounded-2xl text-xs text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 pl-9 transition-all"
                     />
-                    <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                    <MapPin
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+                    />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-mono uppercase text-white/60 mb-1">
-                    Status Inicial
-                  </label>
+                  <label className="block text-xs text-white/60 mb-1.5">Status inicial</label>
                   <select
                     value={statusConta}
                     onChange={(e) => setStatusConta(e.target.value as any)}
-                    className="w-full bg-[#11131A] border border-white/15 focus:border-[#FF1717] px-3.5 py-2.5 rounded-xl text-xs text-white outline-none cursor-pointer"
+                    className="w-full bg-[#121622] focus:bg-[#171C2B] px-3.5 py-2.5 rounded-2xl text-xs text-white outline-none focus:ring-2 focus:ring-[#FF1717]/40 cursor-pointer transition-all"
                   >
-                    <option value="ATIVO">ATIVO</option>
-                    <option value="BLOQUEADO_RESERVAS">BLOQUEADO</option>
-                    <option value="SUSPENSO">SUSPENSO</option>
+                    <option value="ATIVO">Ativo</option>
+                    <option value="BLOQUEADO_RESERVAS">Bloqueado</option>
+                    <option value="SUSPENSO">Suspenso</option>
                   </select>
                 </div>
               </div>
             </form>
 
             {/* Footer */}
-            <div className="p-4 sm:p-6 border-t border-white/10 bg-[#0A0D14] flex items-center justify-between gap-3 shrink-0">
+            <div className="px-6 py-4 bg-[#0B0E14] flex items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={handleClose}
-                className="px-5 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
+                className="px-5 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/80 hover:text-white transition-colors cursor-pointer"
               >
                 Cancelar
               </button>
@@ -427,7 +442,7 @@ export default function UserCreateModal({
                 type="submit"
                 form="create-user-form"
                 disabled={isSubmitting}
-                className="relative px-6 py-2.5 rounded-full bg-[#FF1717] hover:bg-[#E10600] text-white text-xs font-semibold tracking-wide transition-all shadow-lg flex items-center gap-2 cursor-pointer"
+                className="px-6 py-2.5 rounded-full bg-white hover:bg-white/90 disabled:opacity-50 text-[#08090C] text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>

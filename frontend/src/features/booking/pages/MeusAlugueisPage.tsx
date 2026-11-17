@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Activity,
   ShieldAlert,
   Wallet,
   Calendar,
@@ -19,12 +18,21 @@ import {
   Gauge,
   QrCode,
   ShieldCheck,
+  Plus,
+  Eye,
+  X,
+  MapPin,
+  CalendarClock,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { toast } from '@/store/useToastStore';
 import { useCurrencyStore } from '@/store/useCurrencyStore';
 import { resolveStudioCarImage } from '@/lib/carPresentation';
 import { FiaQrPassModal } from '@/features/booking/components/FiaQrPassModal';
+import {
+  CancelSessionModal,
+  RescheduleSessionModal,
+} from '@/features/booking/components/SessionActionModals';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -35,8 +43,20 @@ interface Pedido {
   qrCodeAssinatura?: string;
   checkInRealizadoEm?: string | null;
   tipoServico?: string;
-  automovel?: { id?: number; marca: string; modelo: string; placa: string; imageUrl?: string; precoPorDia?: number } | null;
-  trackSlot?: { data: string; turno: string; circuito?: { id: string; nome: string } } | null;
+  automovel?: {
+    id?: number;
+    marca: string;
+    modelo: string;
+    placa: string;
+    imageUrl?: string;
+    precoPorDia?: number;
+  } | null;
+  trackSlot?: {
+    id?: number;
+    data: string;
+    turno: string;
+    circuito?: { id: string; nome: string };
+  } | null;
   dataInicio: string;
   dataFim: string;
   valorTotal?: number;
@@ -45,27 +65,116 @@ interface Pedido {
   valorSinistro?: number;
   motivoSinistro?: string;
   pagamentoStatus?: string;
-  status: 'AGUARDANDO_APROVACAO' | 'PENDENTE' | 'PENDENTE_EMPRESA' | 'PENDENTE_BANCO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
+  formaPagamento?: string;
+  reagendamentosCount?: number;
+  taxaCancelamentoMinima?: number;
+  taxaAplicada?: number;
+  status:
+    | 'AGUARDANDO_APROVACAO'
+    | 'PENDENTE'
+    | 'PENDENTE_EMPRESA'
+    | 'PENDENTE_BANCO'
+    | 'APROVADO'
+    | 'REJEITADO'
+    | 'CANCELADO'
+    | 'REVISAO_CLIENTE';
   dataPedido: string;
 }
 
-const statusConfig = {
-  AGUARDANDO_APROVACAO: { text: 'Homologação Paddock', color: 'bg-amber-500/10 text-amber-300 border-amber-500/30', icon: Clock },
-  PENDENTE: { text: 'Validação de Box', color: 'bg-white/10 text-white border-white/20', icon: Clock },
-  PENDENTE_EMPRESA: { text: 'Aguardando Grid', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30', icon: Clock },
-  PENDENTE_BANCO: { text: 'Em Análise Financeira', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30', icon: Clock },
-  REVISAO_CLIENTE: { text: 'Ajuste de Horário Sugerido', color: 'bg-[#FF1717]/10 text-[#FF1717] border-[#FF1717]/40 animate-pulse', icon: AlertTriangle },
-  APROVADO: { text: 'Green Flag // Confirmada', color: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40', icon: CheckCircle2 },
-  REJEITADO: { text: 'Não Homologada', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30', icon: XCircle },
-  CANCELADO: { text: 'Cancelada', color: 'bg-white/5 text-white/40 border-white/10', icon: XCircle },
+type StatusFilter = 'all' | 'approved' | 'pending' | 'closed';
+
+const statusConfig: Record<
+  Pedido['status'],
+  { text: string; pillClass: string; icon: typeof Clock }
+> = {
+  AGUARDANDO_APROVACAO: {
+    text: 'Aguardando aprovação',
+    pillClass: 'bg-amber-500/15 text-amber-300',
+    icon: Clock,
+  },
+  PENDENTE: {
+    text: 'Em validação',
+    pillClass: 'bg-white/[0.08] text-white/80',
+    icon: Clock,
+  },
+  PENDENTE_EMPRESA: {
+    text: 'Aguardando equipe',
+    pillClass: 'bg-amber-500/15 text-amber-300',
+    icon: Clock,
+  },
+  PENDENTE_BANCO: {
+    text: 'Em análise financeira',
+    pillClass: 'bg-sky-500/15 text-sky-300',
+    icon: Clock,
+  },
+  REVISAO_CLIENTE: {
+    text: 'Ajuste sugerido',
+    pillClass: 'bg-[#FF1717]/20 text-[#FF8A8A]',
+    icon: AlertTriangle,
+  },
+  APROVADO: {
+    text: 'Confirmada',
+    pillClass: 'bg-emerald-500/15 text-emerald-300',
+    icon: CheckCircle2,
+  },
+  REJEITADO: {
+    text: 'Não aprovada',
+    pillClass: 'bg-rose-500/15 text-rose-300',
+    icon: XCircle,
+  },
+  CANCELADO: {
+    text: 'Cancelada',
+    pillClass: 'bg-white/[0.06] text-white/45',
+    icon: XCircle,
+  },
 };
 
 const SERVICO_LABELS: Record<string, string> = {
   VISITA_BOX: 'Visita ao Box & Paddock VIP',
-  FAST_LAP: 'Fast Lap (Carona c/ Piloto)',
+  FAST_LAP: 'Fast Lap (Carona com piloto)',
   TRACK_EXPERIENCE: 'Track Experience (Pilotar)',
   PACOTE_VIP: 'Pacote VIP Full Day',
 };
+
+const SERVICO_INCLUSOS: Record<string, string[]> = {
+  VISITA_BOX: [
+    'Tour guiado pelo pitlane e área dos boxes',
+    'Briefing técnico com a equipe de pista',
+    'Acesso à área VIP de paddock',
+  ],
+  FAST_LAP: [
+    '2 voltas rápidas como passageiro ao lado de piloto profissional',
+    'Capacete, balaclava e briefing de segurança',
+    'Acesso à área de boxes durante o turno',
+  ],
+  TRACK_EXPERIENCE: [
+    'Pilotagem no circuito durante todo o turno escolhido',
+    'Combustível 102 octanas, pneus de pista e suporte de box',
+    'Telemetria de voltas e rádio com engenheiro de pista',
+  ],
+  PACOTE_VIP: [
+    'Box privativo exclusivo e acompanhamento dedicado',
+    'Pneus dedicados e gravação on-board completa',
+    'Telemetria avançada, combustível e acesso total ao paddock',
+  ],
+};
+
+const PAGAMENTO_LABELS: Record<string, string> = {
+  PAGO: 'Pago via ApexPay',
+  PAGO_CARTEIRA: 'Pago com saldo ApexPay',
+  FATURA_AGUARDANDO_APROVACAO: 'Fatura aguardando aprovação',
+  FATURA_EM_ABERTO: 'Fatura em aberto',
+  PENDENTE: 'Pagamento pendente',
+  ESTORNADO: 'Valor estornado',
+  CANCELADO: 'Fatura cancelada',
+};
+
+const FILTER_OPTIONS: { id: StatusFilter; label: string }[] = [
+  { id: 'all', label: 'Todas' },
+  { id: 'approved', label: 'Confirmadas' },
+  { id: 'pending', label: 'Em análise' },
+  { id: 'closed', label: 'Canceladas e recusadas' },
+];
 
 export default function MeusAlugueisPage() {
   const navigate = useNavigate();
@@ -73,7 +182,11 @@ export default function MeusAlugueisPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState<number | null>(null);
   const [qrPedido, setQrPedido] = useState<Pedido | null>(null);
-  const { formatPrice } = useCurrencyStore();
+  const [detailPedido, setDetailPedido] = useState<Pedido | null>(null);
+  const [cancelPedido, setCancelPedido] = useState<Pedido | null>(null);
+  const [reschedulePedido, setReschedulePedido] = useState<Pedido | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const { formatPrice, formatCircuitEquivalent } = useCurrencyStore();
 
   const fetchMeusPedidos = async () => {
     try {
@@ -81,7 +194,8 @@ export default function MeusAlugueisPage() {
       const response = await api.get('/api/pedidos/meus');
       const list = Array.isArray(response.data) ? response.data : [];
       const sorted = list.sort((a: Pedido, b: Pedido) => {
-        if (a.status === 'REVISAO_CLIENTE') return -1;
+        if (a.status === 'REVISAO_CLIENTE' && b.status !== 'REVISAO_CLIENTE') return -1;
+        if (b.status === 'REVISAO_CLIENTE' && a.status !== 'REVISAO_CLIENTE') return 1;
         return new Date(b.dataPedido).getTime() - new Date(a.dataPedido).getTime();
       });
       setPedidos(sorted);
@@ -111,265 +225,336 @@ export default function MeusAlugueisPage() {
     }
   };
 
-  const handleCancelarPedido = async (id: number) => {
-    try {
-      setIsProcessing(id);
-      await api.put(`/api/pedidos/${id}/cancelar`);
-      setPedidos((prev) => prev.map((p) => (p.id === id ? { ...p, status: 'CANCELADO' } : p)));
-      toast.success('Sessão de pista cancelada.');
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Erro ao cancelar sessão.');
-    } finally {
-      setIsProcessing(null);
-    }
-  };
+  const totalAprovadas = useMemo(
+    () => pedidos.filter((p) => p.status === 'APROVADO').length,
+    [pedidos]
+  );
 
-  const totalAprovadas = pedidos.filter((p) => p.status === 'APROVADO').length;
-  const totalEmAnalise = pedidos.filter((p) =>
-    ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(p.status)
-  ).length;
+  const totalEmAnalise = useMemo(
+    () =>
+      pedidos.filter((p) =>
+        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO', 'REVISAO_CLIENTE'].includes(
+          p.status
+        )
+      ).length,
+    [pedidos]
+  );
+
+  const pedidosFiltrados = useMemo(() => {
+    if (statusFilter === 'all') return pedidos;
+    if (statusFilter === 'approved') return pedidos.filter((p) => p.status === 'APROVADO');
+    if (statusFilter === 'pending') {
+      return pedidos.filter((p) =>
+        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO', 'REVISAO_CLIENTE'].includes(
+          p.status
+        )
+      );
+    }
+    return pedidos.filter((p) => ['CANCELADO', 'REJEITADO'].includes(p.status));
+  }, [pedidos, statusFilter]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#08090C] font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="animate-spin text-[#FF1717]" size={30} />
+          <span className="text-xs text-white/50">Carregando suas sessões de pista...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-screen bg-[#08090C] text-white pt-24 pb-32 selection:bg-[#FF1717] selection:text-white overflow-hidden">
-      {/* Halo de iluminação aerodinâmica de fundo */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-6xl h-96 bg-[radial-gradient(ellipse_60%_50%_at_50%_0%,rgba(255,23,23,0.12),transparent_70%)] pointer-events-none" />
+    <div className="relative min-h-screen bg-[#08090C] text-white pt-28 pb-24 selection:bg-[#FF1717] selection:text-white font-sans overflow-hidden">
+      <div className="max-w-6xl mx-auto px-6">
+        {/* Cabeçalho */}
+        <header className="mb-10 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div className="space-y-4">
+              <div className="inline-flex items-center gap-2.5 pl-1.5 pr-4 py-1.5 rounded-full bg-white/[0.05]">
+                <span className="w-6 h-6 rounded-full bg-[#FF1717] flex items-center justify-center text-white shadow-[0_0_16px_rgba(255,23,23,0.4)]">
+                  <Flag size={12} />
+                </span>
+                <span className="text-xs font-medium text-white/80">
+                  Credenciais de pista · {pedidos.length}{' '}
+                  {pedidos.length === 1 ? 'sessão' : 'sessões'}
+                </span>
+              </div>
 
-      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Cabeçalho da Página */}
-        <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/10">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 mb-3">
-              <span className="w-2 h-2 rounded-full bg-[#FF1717] animate-pulse" />
-              <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-[#FF1717]">
-                Paddock Driver Pass
-              </span>
+              <h1 className="text-3xl sm:text-5xl font-medium tracking-tight text-white leading-[1.08]">
+                Minhas sessões{' '}
+                <span className="italic font-light text-white/85">no autódromo.</span>
+              </h1>
+              <p className="text-white/55 text-xs sm:text-sm max-w-xl leading-relaxed">
+                Acompanhe reservas confirmadas, horários de pista, credenciais QR de acesso ao box e status das faturas no ApexPay.
+              </p>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-              Minhas <span className="text-[#FF1717]">Sessões</span>
-            </h1>
-            <p className="text-white/60 mt-1.5 text-xs sm:text-sm font-normal">
-              Acompanhe suas credenciais de autódromo, horários de box e faturas no ApexPay.
-            </p>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/apexpay')}
+                className="px-4 py-2.5 rounded-full text-xs font-medium text-white/85 bg-[#0D1017] hover:bg-[#121622] transition-colors flex items-center gap-2 cursor-pointer"
+              >
+                <Wallet size={14} className="text-[#FF1717]" />
+                <span>Carteira ApexPay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/pistas')}
+                className="px-5 py-2.5 rounded-full text-xs font-semibold bg-white hover:bg-white/90 text-[#08090C] transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Plus size={14} />
+                <span>Nova sessão</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/apexpay')}
-              className="px-4 py-2.5 rounded-full text-xs font-mono font-medium text-white/80 bg-white/5 hover:bg-white/10 border border-white/15 transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Wallet size={13} className="text-[#FF1717]" />
-              <span>Carteira ApexPay</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/pistas')}
-              className="px-5 py-2.5 rounded-full text-xs font-semibold bg-[#FF1717] hover:bg-[#e01414] text-white transition-all shadow-md shadow-[#FF1717]/25 flex items-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              <span>+ Nova Sessão</span>
-            </button>
-          </div>
+          {/* Barra de resumo e filtros */}
+          {pedidos.length > 0 && (
+            <div className="rounded-3xl bg-[#0D1017] p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-6 sm:gap-8">
+                <div>
+                  <span className="block text-[11px] text-white/45">Total de sessões</span>
+                  <span className="text-xl font-semibold text-white tabular-nums">
+                    {pedidos.length}
+                  </span>
+                </div>
+                <div className="h-8 w-px bg-white/[0.07] hidden sm:block" />
+                <div>
+                  <span className="block text-[11px] text-white/45">Confirmadas</span>
+                  <span className="text-xl font-semibold text-emerald-300 tabular-nums">
+                    {totalAprovadas}
+                  </span>
+                </div>
+                <div className="h-8 w-px bg-white/[0.07] hidden sm:block" />
+                <div>
+                  <span className="block text-[11px] text-white/45">Em análise</span>
+                  <span className="text-xl font-semibold text-amber-300 tabular-nums">
+                    {totalEmAnalise}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 bg-[#121622] p-1 rounded-full self-start lg:self-auto">
+                {FILTER_OPTIONS.map((option) => {
+                  const active = statusFilter === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setStatusFilter(option.id)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-white text-[#08090C]'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </header>
 
-        {/* Barra de KPIs Resumo do Piloto */}
-        {!isLoading && pedidos.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
-            <div className="p-4 rounded-2xl bg-[#0A0D14]/80 backdrop-blur-xl border border-white/10">
-              <div className="flex items-center justify-between text-white/50 text-[11px] font-mono mb-1">
-                <span>Total de Sessões</span>
-                <Activity size={14} className="text-[#FF1717]" />
-              </div>
-              <p className="text-xl font-bold font-mono text-white">{pedidos.length}</p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-[#0A0D14]/80 backdrop-blur-xl border border-white/10">
-              <div className="flex items-center justify-between text-white/50 text-[11px] font-mono mb-1">
-                <span>Confirmadas (Green Flag)</span>
-                <CheckCircle2 size={14} className="text-emerald-400" />
-              </div>
-              <p className="text-xl font-bold font-mono text-emerald-300">{totalAprovadas}</p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-[#0A0D14]/80 backdrop-blur-xl border border-white/10 col-span-2 sm:col-span-1">
-              <div className="flex items-center justify-between text-white/50 text-[11px] font-mono mb-1">
-                <span>Em Homologação</span>
-                <Clock size={14} className="text-amber-400" />
-              </div>
-              <p className="text-xl font-bold font-mono text-amber-300">{totalEmAnalise}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Conteúdo Principal */}
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <Loader2 className="animate-spin text-[#FF1717]" size={36} />
-            <span className="font-mono text-xs text-white/50 tracking-wider">
-              Carregando credenciais do piloto...
-            </span>
-          </div>
-        ) : pedidos.length === 0 ? (
+        {/* Estado vazio */}
+        {pedidos.length === 0 ? (
           <motion.div
-            initial={{ opacity: 0, y: 15 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center py-20 bg-[#0A0D14]/75 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl"
+            className="text-center py-20 px-6 bg-[#0D1017] rounded-3xl"
           >
-            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#FF1717] border border-white/10">
-              <Flag size={28} />
+            <div className="w-16 h-16 bg-[#121622] rounded-2xl flex items-center justify-center mx-auto mb-5 text-[#FF1717]">
+              <Flag size={26} />
             </div>
-            <h3 className="text-xl font-bold text-white tracking-tight mb-2">
-              Nenhuma Sessão Ativa no Momento
-            </h3>
-            <p className="text-white/50 text-xs sm:text-sm max-w-md mx-auto mb-6">
-              Você ainda não reservou nenhuma bateria de pista ou visita técnica aos boxes.
+            <h2 className="text-xl font-medium text-white tracking-tight mb-2">
+              Nenhuma sessão agendada
+            </h2>
+            <p className="text-white/50 text-xs sm:text-sm max-w-md mx-auto mb-6 leading-relaxed">
+              Você ainda não reservou nenhuma bateria de pista ou visita aos boxes. Escolha um circuito para começar.
             </p>
             <button
               type="button"
               onClick={() => navigate('/pistas')}
-              className="px-6 py-3 bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold rounded-full transition-all shadow-lg shadow-[#FF1717]/30 cursor-pointer inline-flex items-center gap-2"
+              className="px-6 py-3 bg-white hover:bg-white/90 text-[#08090C] text-xs font-semibold rounded-full transition-all cursor-pointer inline-flex items-center gap-2"
             >
-              <span>Explorar Pistas e Boxes</span>
+              <span>Explorar pistas e boxes</span>
               <ArrowRight size={14} />
             </button>
           </motion.div>
+        ) : pedidosFiltrados.length === 0 ? (
+          <div className="text-center py-16 px-6 bg-[#0D1017] rounded-3xl space-y-3">
+            <p className="text-sm font-medium text-white">
+              Nenhuma sessão encontrada neste filtro.
+            </p>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="px-4 py-2 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/80 transition-colors cursor-pointer"
+            >
+              Mostrar todas as sessões
+            </button>
+          </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <AnimatePresence>
-              {pedidos.map((pedido, index) => {
+              {pedidosFiltrados.map((pedido, index) => {
                 const config = statusConfig[pedido.status] || statusConfig.PENDENTE;
                 const StatusIcon = config.icon;
                 const dataInicio = parseISO(pedido.dataInicio);
-                const podeCancelar = ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
-                  pedido.status
-                );
-                const servicoLabel = SERVICO_LABELS[pedido.tipoServico || 'TRACK_EXPERIENCE'] || pedido.tipoServico;
-                const circuitoLabel = pedido.trackSlot?.circuito?.nome || 'Circuito Internacional';
-                const turnoLabel = pedido.trackSlot?.turno || 'SESSÃO';
+                const podeCancelar =
+                  !['CANCELADO', 'REJEITADO'].includes(pedido.status) &&
+                  !pedido.checkInRealizadoEm;
+                const podeAlterarData =
+                  podeCancelar &&
+                  Boolean(pedido.trackSlot?.circuito?.id) &&
+                  (pedido.reagendamentosCount ?? 0) < 1;
+                const servicoLabel =
+                  SERVICO_LABELS[pedido.tipoServico || 'TRACK_EXPERIENCE'] || pedido.tipoServico;
+                const circuitoLabel =
+                  pedido.trackSlot?.circuito?.nome || 'Circuito Internacional';
+                const turnoLabel = pedido.trackSlot?.turno || 'A definir';
                 const valorExibido = pedido.valorFinal ?? pedido.valorTotal ?? 0;
+                const pagamentoTexto =
+                  PAGAMENTO_LABELS[pedido.pagamentoStatus || 'PENDENTE'] ||
+                  `Fatura ${pedido.pagamentoStatus}`;
 
                 return (
-                  <motion.div
+                  <motion.article
                     key={pedido.id}
-                    initial={{ opacity: 0, y: 15 }}
+                    initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="bg-[#0A0D14]/85 backdrop-blur-2xl border border-white/10 hover:border-[#FF1717]/40 rounded-3xl overflow-hidden shadow-2xl transition-all duration-300"
+                    transition={{ delay: index * 0.04 }}
+                    className="bg-[#0D1017] hover:bg-[#0F131C] rounded-3xl p-5 sm:p-7 transition-colors"
                   >
-                    {/* Top Ribbon / Tracking Pass */}
-                    <div className="bg-white/[0.02] border-b border-white/10 px-5 sm:px-7 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                          FIA PASS
-                        </span>
-                        <span className="font-mono text-xs font-bold text-[#FF1717] bg-white/5 px-2.5 py-0.5 rounded-md border border-white/10">
+                    {/* Linha superior do card */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-5 mb-5 border-b border-white/[0.06]">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="px-3 py-1 rounded-full bg-[#121622] text-xs font-medium text-white/90 tabular-nums">
                           {pedido.trackingCode || `APX-${String(pedido.id).padStart(6, '0')}`}
                         </span>
                         {pedido.dataPedido && (
-                          <span className="text-[11px] text-white/45 hidden sm:inline">
-                            • Solicitado em {format(parseISO(pedido.dataPedido), "dd 'de' MMM", { locale: ptBR })}
+                          <span className="text-xs text-white/45">
+                            Solicitado em{' '}
+                            {format(parseISO(pedido.dataPedido), "dd 'de' MMM", { locale: ptBR })}
                           </span>
                         )}
                       </div>
 
-                      <div
-                        className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border ${config.color}`}
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${config.pillClass}`}
                       >
-                        <StatusIcon size={12} strokeWidth={2.5} />
+                        <StatusIcon size={13} />
                         <span>{config.text}</span>
-                      </div>
+                      </span>
                     </div>
 
-                    {/* Corpo da Ficha do Supercarro / Sessão */}
-                    <div className="p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-                      {/* Imagem do Carro Studio */}
-                      <div className="lg:col-span-5 flex flex-col items-center">
-                        <div className="w-full aspect-[16/10] bg-gradient-to-b from-[#141822] to-[#0A0D14] rounded-2xl border border-white/10 p-3 flex items-center justify-center relative overflow-hidden group">
+                    {/* Corpo principal */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                      {/* Carro / Paddock preview */}
+                      <div className="lg:col-span-5 space-y-3">
+                        <div className="w-full aspect-[16/10] rounded-2xl bg-gradient-to-b from-[#161B28] to-[#111520] p-4 flex items-center justify-center relative overflow-hidden group">
                           {pedido.automovel ? (
                             <img
                               src={resolveStudioCarImage(pedido.automovel)}
                               alt={pedido.automovel.modelo}
-                              className="max-h-full max-w-full object-contain drop-shadow-[0_12px_18px_rgba(0,0,0,0.9)] group-hover:scale-105 transition-transform duration-300"
+                              className="max-h-full max-w-full object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.85)] group-hover:scale-105 transition-transform duration-300"
                             />
                           ) : (
-                            <CarFront size={48} className="text-white/20" />
+                            <CarFront size={46} className="text-white/20" />
                           )}
-                          <div className="absolute bottom-2.5 left-2.5 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10 text-[9px] font-mono font-bold text-[#FF1717] uppercase tracking-wider">
-                            {pedido.automovel ? pedido.automovel.marca : 'PADDOCK VIP'}
-                          </div>
+                          <span className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-[#08090C]/75 backdrop-blur-md text-[11px] font-medium text-white/80">
+                            {pedido.automovel ? pedido.automovel.marca : 'Paddock VIP'}
+                          </span>
                         </div>
 
-                        <div className="w-full mt-3 text-left">
-                          <h3 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">
+                        <div>
+                          <h2 className="text-lg font-medium text-white tracking-tight truncate">
                             {pedido.automovel ? pedido.automovel.modelo : servicoLabel}
-                          </h3>
-                          <p className="text-xs text-white/50 flex items-center gap-1 mt-0.5">
-                            <Gauge size={11} className="text-[#FF1717]" />
-                            <span>{circuitoLabel} · Turno {turnoLabel}</span>
+                          </h2>
+                          <p className="text-xs text-white/50 flex items-center gap-1.5 mt-0.5">
+                            <Gauge size={13} className="text-[#FF1717]" />
+                            <span>
+                              {circuitoLabel} · Turno {turnoLabel}
+                            </span>
                           </p>
                         </div>
                       </div>
 
-                      {/* Dados Técnicos e Financeiros */}
+                      {/* Informações da bateria e ações */}
                       <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
-                        <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="rounded-2xl bg-[#121622] p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div>
-                            <span className="text-[10px] text-[#FF1717] font-mono uppercase tracking-wider block font-bold">
-                              Modalidade
+                            <span className="text-[11px] text-white/45 block">Modalidade</span>
+                            <span className="text-sm font-medium text-white block mt-1">
+                              {servicoLabel}
                             </span>
-                            <span className="font-semibold text-white text-sm block mt-0.5">{servicoLabel}</span>
-                            <span className="text-[11px] text-white/50 block">{circuitoLabel}</span>
+                            <span className="text-xs text-white/45 block mt-0.5 truncate">
+                              {circuitoLabel}
+                            </span>
                           </div>
 
-                          <div className="sm:border-l sm:border-white/10 sm:pl-3">
-                            <span className="text-[10px] text-white/40 font-mono uppercase tracking-wider block font-bold">
-                              Data & Turno
-                            </span>
-                            <span className="font-semibold text-white text-sm block mt-0.5 flex items-center gap-1.5">
-                              <Calendar size={13} className="text-white/60" />
-                              {format(dataInicio, "dd 'de' MMMM", { locale: ptBR })}
-                            </span>
-                            <span className="text-[11px] text-emerald-400 block mt-0.5">Turno: {turnoLabel}</span>
-                          </div>
-                        </div>
-
-                        {/* Bloco Financeiro ApexPay */}
-                        <div className="p-4 rounded-2xl bg-black/60 border border-white/10 flex items-center justify-between gap-4">
                           <div>
-                            <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider block font-bold">
-                              Fatura ApexPay ({pedido.pagamentoStatus || 'PENDENTE'})
+                            <span className="text-[11px] text-white/45 block">Data e turno</span>
+                            <span className="text-sm font-medium text-white mt-1 flex items-center gap-1.5">
+                              <Calendar size={13} className="text-white/50 shrink-0" />
+                              <span className="truncate">
+                                {format(dataInicio, "dd 'de' MMMM", { locale: ptBR })}
+                              </span>
                             </span>
-                            <span className="text-xs text-white/65">
-                              Combustível 102 octanas, pneus e telemetria inclusos
+                            <span className="text-xs text-emerald-300/90 block mt-0.5">
+                              Turno {turnoLabel}
                             </span>
                           </div>
-                          <div className="text-right">
-                            <span className="text-[10px] font-mono text-[#FF1717] uppercase tracking-wider block font-bold">
-                              Valor Total
-                            </span>
-                            <span className="text-xl sm:text-2xl font-black font-mono text-white">
+
+                          <div>
+                            <span className="text-[11px] text-white/45 block">Valor total</span>
+                            <span className="text-lg font-semibold text-white tabular-nums block mt-0.5">
                               {formatPrice(valorExibido)}
+                            </span>
+                            {(() => {
+                              const foreignEquiv = formatCircuitEquivalent(
+                                valorExibido,
+                                pedido.trackSlot?.circuito?.id
+                              );
+                              if (!foreignEquiv) return null;
+                              return (
+                                <span className="text-[11px] text-white/55 block mt-0.5 tabular-nums">
+                                  ≈ {foreignEquiv.formatted} ({foreignEquiv.code})
+                                </span>
+                              );
+                            })()}
+                            <span className="text-xs text-white/50 block mt-0.5">
+                              {pagamentoTexto}
                             </span>
                           </div>
                         </div>
 
                         {/* Alerta de Sinistro */}
                         {pedido.valorSinistro && pedido.valorSinistro > 0 ? (
-                          <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 flex items-center gap-2.5 text-xs">
-                            <ShieldAlert size={15} className="text-rose-400 shrink-0" />
-                            <span className="text-rose-200">
-                              Sinistro lançado: <strong>{formatPrice(pedido.valorSinistro)}</strong> ({pedido.motivoSinistro || 'Avaria'})
+                          <div className="p-4 rounded-2xl bg-rose-500/10 flex items-center gap-3 text-xs">
+                            <ShieldAlert size={16} className="text-rose-400 shrink-0" />
+                            <span className="text-rose-200 leading-relaxed">
+                              Ocorrência registrada: <strong>{formatPrice(pedido.valorSinistro)}</strong>{' '}
+                              ({pedido.motivoSinistro || 'Avaria'})
                             </span>
                           </div>
                         ) : null}
 
-                        {/* Ajuste Proposto pelo Box (REVISAO_CLIENTE) */}
+                        {/* Ajuste Proposto (REVISAO_CLIENTE) */}
                         {pedido.status === 'REVISAO_CLIENTE' && (
-                          <div className="p-4 rounded-2xl bg-[#FF1717]/10 border border-[#FF1717]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="p-4 rounded-2xl bg-[#FF1717]/12 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-start gap-2.5">
                               <AlertTriangle className="text-[#FF1717] shrink-0 mt-0.5" size={16} />
                               <div>
-                                <p className="text-xs font-bold text-white">Ajuste de horário sugerido pelo Box.</p>
-                                <p className="text-[11px] text-white/60">Aceite ou recuse o novo turno proposto pela equipe.</p>
+                                <p className="text-xs font-semibold text-white">
+                                  Ajuste de horário sugerido pela equipe de pista.
+                                </p>
+                                <p className="text-xs text-white/60 mt-0.5">
+                                  Confirme se o novo turno atende sua disponibilidade.
+                                </p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
@@ -377,7 +562,7 @@ export default function MeusAlugueisPage() {
                                 type="button"
                                 onClick={() => handleResponderRevisao(pedido.id, false)}
                                 disabled={isProcessing === pedido.id}
-                                className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors cursor-pointer"
+                                className="px-3.5 py-2 rounded-full bg-[#121622] hover:bg-white/10 text-white text-xs font-medium transition-colors cursor-pointer"
                               >
                                 Recusar
                               </button>
@@ -385,7 +570,7 @@ export default function MeusAlugueisPage() {
                                 type="button"
                                 onClick={() => handleResponderRevisao(pedido.id, true)}
                                 disabled={isProcessing === pedido.id}
-                                className="px-4 py-1.5 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-all shadow-md cursor-pointer"
+                                className="px-4 py-2 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white text-xs font-semibold transition-colors cursor-pointer"
                               >
                                 Aceitar
                               </button>
@@ -393,46 +578,329 @@ export default function MeusAlugueisPage() {
                           </div>
                         )}
 
-                        {/* Ações da Credencial (QR Code FIA + Cancelar) */}
-                        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
-                          <div className="flex items-center gap-2">
+                        {/* Ações da Credencial e Detalhes */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setDetailPedido(pedido)}
+                              className="px-4 py-2 rounded-full bg-white hover:bg-white/90 text-[#08090C] text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer"
+                            >
+                              <Eye size={14} />
+                              <span>Ver detalhes</span>
+                            </button>
+
                             <button
                               type="button"
                               onClick={() => setQrPedido(pedido)}
-                              className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 hover:border-[#FF1717]/50 text-white text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+                              className="px-4 py-2 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white/90 text-xs font-medium transition-all flex items-center gap-2 cursor-pointer"
                             >
-                              <QrCode size={13} className="text-[#FF1717]" />
-                              <span>Credencial QR Code</span>
+                              <QrCode size={14} className="text-[#FF1717]" />
+                              <span>Credencial QR</span>
                             </button>
 
                             {pedido.checkInRealizadoEm && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono">
-                                <ShieldCheck size={11} /> Check-in Box OK
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-medium">
+                                <ShieldCheck size={13} />
+                                <span>Check-in realizado</span>
                               </span>
                             )}
                           </div>
 
-                          {podeCancelar && (
-                            <button
-                              type="button"
-                              onClick={() => handleCancelarPedido(pedido.id)}
-                              disabled={isProcessing === pedido.id}
-                              className="px-3.5 py-1.5 rounded-full border border-rose-500/30 text-rose-400 hover:bg-rose-950/40 text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
-                            >
-                              {isProcessing === pedido.id ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />}
-                              <span>Cancelar Bateria</span>
-                            </button>
-                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {podeAlterarData && (
+                              <button
+                                type="button"
+                                onClick={() => setReschedulePedido(pedido)}
+                                className="px-4 py-2 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white/80 hover:text-white text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <CalendarClock size={13} className="text-[#FF1717]" />
+                                <span>Alterar data</span>
+                              </button>
+                            )}
+
+                            {podeCancelar && (
+                              <button
+                                type="button"
+                                onClick={() => setCancelPedido(pedido)}
+                                className="px-4 py-2 rounded-full bg-[#121622] hover:bg-rose-500/15 text-white/70 hover:text-rose-300 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <XCircle size={13} />
+                                <span>Cancelar</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </motion.div>
+                  </motion.article>
                 );
               })}
             </AnimatePresence>
           </div>
         )}
       </div>
+
+      {/* Drawer de Detalhes da Sessão */}
+      <AnimatePresence>
+        {detailPedido && (() => {
+          const config = statusConfig[detailPedido.status] || statusConfig.PENDENTE;
+          const StatusIcon = config.icon;
+          const dataInicio = parseISO(detailPedido.dataInicio);
+          const dataFim = parseISO(detailPedido.dataFim);
+          const servicoKey = detailPedido.tipoServico || 'TRACK_EXPERIENCE';
+          const servicoLabel = SERVICO_LABELS[servicoKey] || servicoKey;
+          const inclusos = SERVICO_INCLUSOS[servicoKey] || SERVICO_INCLUSOS.TRACK_EXPERIENCE;
+          const circuitoLabel =
+            detailPedido.trackSlot?.circuito?.nome || 'Circuito Internacional';
+          const turnoLabel = detailPedido.trackSlot?.turno || 'A definir';
+          const valorBase = detailPedido.valorTotal ?? detailPedido.valorFinal ?? 0;
+          const desconto = detailPedido.descontoFidelidade ?? 0;
+          const valorFinal = detailPedido.valorFinal ?? detailPedido.valorTotal ?? 0;
+          const foreignEquiv = formatCircuitEquivalent(
+            valorFinal,
+            detailPedido.trackSlot?.circuito?.id
+          );
+          const pagamentoTexto =
+            PAGAMENTO_LABELS[detailPedido.pagamentoStatus || 'PENDENTE'] ||
+            'Pagamento em processamento';
+          const podeCancelar =
+            !['CANCELADO', 'REJEITADO'].includes(detailPedido.status) &&
+            !detailPedido.checkInRealizadoEm;
+          const podeAlterarData =
+            podeCancelar &&
+            Boolean(detailPedido.trackSlot?.circuito?.id) &&
+            (detailPedido.reagendamentosCount ?? 0) < 1;
+
+          return (
+            <div className="fixed inset-0 z-[120] flex justify-end font-sans">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDetailPedido(null)}
+                className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
+              />
+
+              <motion.aside
+                role="dialog"
+                aria-modal="true"
+                aria-label="Detalhes da sessão"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+                className="relative z-10 w-full max-w-[480px] h-full sm:p-3 flex flex-col"
+              >
+                <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
+                  {/* Cabeçalho */}
+                  <div className="px-6 pt-6 pb-5 flex items-start justify-between gap-4 border-b border-white/[0.06] shrink-0">
+                    <div className="space-y-2 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-3 py-1 rounded-full bg-[#121622] text-xs font-medium text-white/90 tabular-nums">
+                          {detailPedido.trackingCode ||
+                            `APX-${String(detailPedido.id).padStart(6, '0')}`}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${config.pillClass}`}
+                        >
+                          <StatusIcon size={12} />
+                          <span>{config.text}</span>
+                        </span>
+                      </div>
+                      <h2 className="text-xl font-medium text-white truncate">
+                        {detailPedido.automovel
+                          ? detailPedido.automovel.modelo
+                          : servicoLabel}
+                      </h2>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setDetailPedido(null)}
+                      aria-label="Fechar detalhes"
+                      className="w-9 h-9 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white/60 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                    >
+                      <X size={17} />
+                    </button>
+                  </div>
+
+                  {/* Corpo com rolagem */}
+                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                    {/* Imagem do veículo */}
+                    <div className="w-full aspect-[16/9] rounded-2xl bg-gradient-to-b from-[#161B28] to-[#111520] p-4 flex items-center justify-center relative overflow-hidden">
+                      {detailPedido.automovel ? (
+                        <img
+                          src={resolveStudioCarImage(detailPedido.automovel)}
+                          alt={detailPedido.automovel.modelo}
+                          className="max-h-full max-w-full object-contain drop-shadow-[0_14px_22px_rgba(0,0,0,0.85)]"
+                        />
+                      ) : (
+                        <CarFront size={48} className="text-white/20" />
+                      )}
+                      <span className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-[#08090C]/75 backdrop-blur-md text-[11px] font-medium text-white/85">
+                        {detailPedido.automovel
+                          ? `${detailPedido.automovel.marca} · Placa ${detailPedido.automovel.placa}`
+                          : 'Paddock VIP'}
+                      </span>
+                    </div>
+
+                    {/* Local, data e horário */}
+                    <div className="rounded-2xl bg-[#121622] p-4 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <MapPin size={16} className="text-[#FF1717] shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-white/45">Circuito e modalidade</p>
+                          <p className="text-sm font-medium text-white mt-0.5">
+                            {circuitoLabel}
+                          </p>
+                          <p className="text-xs text-white/60 mt-0.5">{servicoLabel}</p>
+                        </div>
+                      </div>
+
+                      <div className="h-px bg-white/[0.06]" />
+
+                      <div className="flex items-start gap-3">
+                        <Calendar size={16} className="text-white/60 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-white/45">Data e horário da bateria</p>
+                          <p className="text-sm font-medium text-white mt-0.5">
+                            {format(dataInicio, "EEEE, dd 'de' MMMM 'de' yyyy", {
+                              locale: ptBR,
+                            })}
+                          </p>
+                          <p className="text-xs text-emerald-300/90 mt-0.5">
+                            Turno {turnoLabel} · {format(dataInicio, 'HH:mm')} às{' '}
+                            {format(dataFim, 'HH:mm')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* O que está incluso */}
+                    <div className="rounded-2xl bg-[#121622] p-4 space-y-2.5">
+                      <p className="text-xs font-medium text-white/80">
+                        Incluído nesta sessão
+                      </p>
+                      <ul className="space-y-2">
+                        {inclusos.map((item) => (
+                          <li
+                            key={item}
+                            className="flex items-start gap-2.5 text-xs text-white/60 leading-relaxed"
+                          >
+                            <CheckCircle2
+                              size={14}
+                              className="text-emerald-400 shrink-0 mt-0.5"
+                            />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Resumo financeiro */}
+                    <div className="rounded-2xl bg-[#121622] p-4 space-y-2.5 text-xs">
+                      <p className="text-xs font-medium text-white/80 mb-1">
+                        Resumo financeiro
+                      </p>
+                      <div className="flex items-center justify-between text-white/60">
+                        <span>Valor da sessão</span>
+                        <span className="tabular-nums">{formatPrice(valorBase)}</span>
+                      </div>
+                      {desconto > 0 && (
+                        <div className="flex items-center justify-between text-emerald-300">
+                          <span>Desconto fidelidade</span>
+                          <span className="tabular-nums">-{formatPrice(desconto)}</span>
+                        </div>
+                      )}
+                      <div className="h-px bg-white/[0.06] my-1" />
+                      <div className="flex items-center justify-between text-sm font-semibold text-white">
+                        <span>Total</span>
+                        <span className="tabular-nums">{formatPrice(valorFinal)}</span>
+                      </div>
+                      {foreignEquiv && (
+                        <div className="flex items-center justify-between text-[11px] text-white/50">
+                          <span>Equivalente na moeda da pista</span>
+                          <span className="tabular-nums">
+                            ≈ {foreignEquiv.formatted} ({foreignEquiv.label})
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between text-white/55 pt-1">
+                        <span>Pagamento</span>
+                        <span>{pagamentoTexto}</span>
+                      </div>
+                    </div>
+
+                    {detailPedido.valorSinistro && detailPedido.valorSinistro > 0 ? (
+                      <div className="p-4 rounded-2xl bg-rose-500/10 flex items-center gap-3 text-xs">
+                        <ShieldAlert size={16} className="text-rose-400 shrink-0" />
+                        <span className="text-rose-200 leading-relaxed">
+                          Ocorrência registrada:{' '}
+                          <strong>{formatPrice(detailPedido.valorSinistro)}</strong> (
+                          {detailPedido.motivoSinistro || 'Avaria'})
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Rodapé */}
+                  <div className="px-6 py-4 bg-[#0B0E14] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = detailPedido;
+                        setDetailPedido(null);
+                        setQrPedido(target);
+                      }}
+                      className="px-4 py-2.5 rounded-full bg-white hover:bg-white/90 text-[#08090C] text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <QrCode size={14} />
+                      <span>Credencial QR</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      {podeAlterarData && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = detailPedido;
+                            setDetailPedido(null);
+                            setReschedulePedido(target);
+                          }}
+                          className="px-4 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-white/80 hover:text-white text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Alterar data
+                        </button>
+                      )}
+                      {podeCancelar && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = detailPedido;
+                            setDetailPedido(null);
+                            setCancelPedido(target);
+                          }}
+                          className="px-4 py-2.5 rounded-full bg-[#121622] hover:bg-rose-500/15 text-white/75 hover:text-rose-300 text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setDetailPedido(null)}
+                        className="px-4 py-2.5 rounded-full bg-[#121622] hover:bg-white/[0.08] text-xs font-medium text-white/75 hover:text-white transition-colors cursor-pointer"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.aside>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
 
       {qrPedido && (
         <FiaQrPassModal
@@ -445,6 +913,26 @@ export default function MeusAlugueisPage() {
           initialCheckInEm={qrPedido.checkInRealizadoEm}
         />
       )}
+
+      <CancelSessionModal
+        pedido={cancelPedido}
+        onClose={() => setCancelPedido(null)}
+        onCancelled={(updated) => {
+          setPedidos((prev) =>
+            prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+          );
+        }}
+      />
+
+      <RescheduleSessionModal
+        pedido={reschedulePedido}
+        onClose={() => setReschedulePedido(null)}
+        onRescheduled={(updated) => {
+          setPedidos((prev) =>
+            prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+          );
+        }}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AdminDashboardPage from './AdminDashboardPage';
+import AdminUsersPage from './AdminUsersPage';
 import { api } from '@/services/api';
 
 vi.mock('@/services/api');
@@ -28,15 +29,15 @@ const mockDashboardData = {
     { mes: 'NOV/26', faturamento: 70000, lucro: 47600, sessoes: 14 },
   ],
   distribuicaoModalidades: [
-    { modalidade: 'Track Day Oficial', tipoServico: 'TRACK_DAY', quantidade: 10, totalBRL: 50000 },
-    { modalidade: 'Hot Lap Coach', tipoServico: 'HOT_LAP_COACH', quantidade: 4, totalBRL: 20000 },
+    { modalidade: 'Track Experience', tipoServico: 'TRACK_EXPERIENCE', quantidade: 10, totalBRL: 50000 },
+    { modalidade: 'Fast Lap', tipoServico: 'FAST_LAP', quantidade: 4, totalBRL: 20000 },
   ],
   faturamentoPorCircuito: {
-    'Interlagos': 35000,
-    'Nürburgring': 35000,
+    Interlagos: 35000,
+    Nürburgring: 35000,
   },
   ocupacaoBoxesPorAutodromo: {
-    'interlagos': {
+    interlagos: {
       circuitoNome: 'Interlagos',
       totalVagas: 30,
       totalOcupadas: 18,
@@ -83,25 +84,7 @@ const mockDashboardData = {
       inadimplente: true,
     },
   ],
-  agendamentos: [
-    {
-      id: 101,
-      trackingCode: 'APX-7788',
-      clienteNome: 'Ayrton Senna',
-      clienteEmail: 'senna@apex.com',
-      clienteInadimplente: false,
-      automovelNome: 'Porsche 911 GT3 RS',
-      circuitoNome: 'Interlagos',
-      slotData: '2026-11-20',
-      slotTurno: 'MANHA',
-      tipoServico: 'TRACK_DAY',
-      valorTotal: 5000,
-      descontoFidelidade: 0,
-      valorFinal: 5000,
-      valorSinistro: 0,
-      status: 'AGUARDANDO_APROVACAO',
-    },
-  ],
+  agendamentos: [],
   saudeMensageriaQueue: {
     motor: 'VirtualThreads',
     status: 'ONLINE',
@@ -115,13 +98,13 @@ const mockDashboardData = {
   },
 };
 
-describe('AdminDashboardPage Component', () => {
+describe('AdminDashboardPage e AdminUsersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (api.get as any).mockResolvedValue({ data: mockDashboardData });
   });
 
-  it('deve carregar e renderizar o cabeçalho executivo e KPIs principais', async () => {
+  it('deve renderizar o Painel Executivo focado em KPIs, gráficos reais e ocupação sem bandeiras fictícias', async () => {
     render(
       <MemoryRouter>
         <AdminDashboardPage />
@@ -132,26 +115,24 @@ describe('AdminDashboardPage Component', () => {
     expect(screen.getByText('Lucro Líquido Operacional')).toBeDefined();
     expect(screen.getByText('Dívida Ativa ApexPay')).toBeDefined();
     expect(screen.getByText('Custódia ApexPay Sandbox')).toBeDefined();
+    expect(screen.getByText(/Receita & Lucro por Mês/i)).toBeDefined();
+    expect(screen.getByText(/Ocupação das vagas nos 8 autódromos/i)).toBeDefined();
+    expect(screen.queryByText(/Bandeira Verde/i)).toBeNull();
   });
 
-  it('deve alternar para a aba de Gestão de Pilotos e exibir a lista com busca', async () => {
+  it('deve renderizar a página separada de Gestão de Pilotos com busca', async () => {
     render(
       <MemoryRouter>
-        <AdminDashboardPage />
+        <AdminUsersPage />
       </MemoryRouter>
     );
-
-    await screen.findByText('Painel Executivo Apex');
-
-    const pilotosTab = screen.getByRole('button', { name: /Gestão de Pilotos/i });
-    fireEvent.click(pilotosTab);
 
     expect(await screen.findByText('Ayrton Senna')).toBeDefined();
     expect(screen.getByText('Alain Prost')).toBeDefined();
     expect(screen.getByPlaceholderText(/Buscar piloto por nome/i)).toBeDefined();
   });
 
-  it('deve abrir o Drawer de Edição 360° ao clicar em Editar Ficha', async () => {
+  it('deve abrir o Drawer de Edição 360° ao clicar em Editar Ficha em AdminUsersPage', async () => {
     (api.get as any).mockImplementation((url: string) => {
       if (url.includes('/api/admin/usuarios/1')) {
         return Promise.resolve({
@@ -169,14 +150,9 @@ describe('AdminDashboardPage Component', () => {
 
     render(
       <MemoryRouter>
-        <AdminDashboardPage />
+        <AdminUsersPage />
       </MemoryRouter>
     );
-
-    await screen.findByText('Painel Executivo Apex');
-
-    const pilotosTab = screen.getByRole('button', { name: /Gestão de Pilotos/i });
-    fireEvent.click(pilotosTab);
 
     const editBtns = await screen.findAllByRole('button', { name: /Editar Ficha/i });
     fireEvent.click(editBtns[0]);
@@ -189,35 +165,12 @@ describe('AdminDashboardPage Component', () => {
     });
   });
 
-  it('deve alternar para a aba de Race Control & Paddock Live com seletores de bandeira', async () => {
+  it('deve abrir o modal de cadastro de novo piloto ao clicar em Novo Piloto em AdminUsersPage', async () => {
     render(
       <MemoryRouter>
-        <AdminDashboardPage />
+        <AdminUsersPage />
       </MemoryRouter>
     );
-
-    await screen.findByText('Painel Executivo Apex');
-
-    const raceControlTab = screen.getByRole('button', { name: /Race Control & Paddock Live/i });
-    fireEvent.click(raceControlTab);
-
-    expect(await screen.findByText(/Bandeira Verde · Pista Liberada/i)).toBeDefined();
-    expect(screen.getByRole('button', { name: /Amarela/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /Vermelha/i })).toBeDefined();
-    expect(screen.getByRole('button', { name: /Chuva/i })).toBeDefined();
-  });
-
-  it('deve abrir o modal de cadastro de novo piloto ao clicar em Novo Piloto', async () => {
-    render(
-      <MemoryRouter>
-        <AdminDashboardPage />
-      </MemoryRouter>
-    );
-
-    await screen.findByText('Painel Executivo Apex');
-
-    const pilotosTab = screen.getByRole('button', { name: /Gestão de Pilotos/i });
-    fireEvent.click(pilotosTab);
 
     const novoPilotoBtn = await screen.findByRole('button', { name: /Novo Piloto/i });
     fireEvent.click(novoPilotoBtn);

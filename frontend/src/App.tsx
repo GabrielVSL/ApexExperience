@@ -1,4 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useCurrencyStore } from '@/store/useCurrencyStore';
 import Layout from '@/components/layout/Layout.tsx';
 import HomeLayout from '@/components/layout/HomeLayout.tsx';
 import PageTransition from '@/components/PageTransition.tsx';
@@ -6,6 +8,7 @@ import PedidosPage from '@/features/booking/pages/PedidosPage';
 import MeusAlugueisPage from '@/features/booking/pages/MeusAlugueisPage';
 import ApexPayPage from '@/features/bank/pages/ApexPayPage';
 import AdminDashboardPage from '@/features/admin/pages/AdminDashboardPage';
+import AdminUsersPage from '@/features/admin/pages/AdminUsersPage';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import ToastContainer from '@/components/ui/ToastContainer';
 
@@ -13,24 +16,51 @@ import AuthPage from '@/features/auth/pages/AuthPage';
 import CarsPage from '@/features/cars/pages/CarsPage.tsx';
 import CarDetailPage from '@/features/cars/pages/CarDetailPage.tsx';
 import PistasPage from '@/features/circuits/pages/PistasPage';
+import ErrorPage from '@/features/errors/pages/ErrorPage';
+import ErrorBoundary from '@/components/ui/ErrorBoundary';
 
-function NotFound() {
-  return (
-    <div className="min-h-screen flex items-center justify-center text-center">
-      <div>
-        <h1 className="text-4xl font-bold mb-4">404</h1>
-        <p>Página não encontrada</p>
-      </div>
-    </div>
-  );
+const ROUTE_TITLES: Record<string, string> = {
+  '/': 'apex',
+  '/login': 'apex · Entrar',
+  '/cadastro': 'apex · Criar conta',
+  '/auth': 'apex · Acesso',
+  '/pistas': 'apex · Pistas',
+  '/cars': 'apex · Frota',
+  '/meus-alugueis': 'apex · Minhas sessões',
+  '/apexpay': 'apex · ApexPay',
+  '/admin': 'apex · Painel',
+  '/admin/usuarios': 'apex · Pilotos',
+  '/pedidos': 'apex · Sessões',
+  '/erro': 'apex · Erro',
+};
+
+function RouteTitleUpdater() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (ROUTE_TITLES[pathname]) {
+      document.title = ROUTE_TITLES[pathname];
+    } else if (pathname.startsWith('/cars/')) {
+      document.title = 'apex · Veículo';
+    } else {
+      document.title = 'apex · Não encontrado';
+    }
+  }, [pathname]);
+
+  return null;
 }
 
 export default function App() {
+  useEffect(() => {
+    void useCurrencyStore.getState().initRate();
+  }, []);
+
   return (
     <Router>
+      <RouteTitleUpdater />
       <ToastContainer />
-      
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
         <Route path="/" element={<PageTransition><HomeLayout /></PageTransition>} />
         <Route path="/login" element={<PageTransition><AuthPage initialMode="login" /></PageTransition>} />
         <Route path="/cadastro" element={<PageTransition><AuthPage initialMode="register" /></PageTransition>} />
@@ -47,12 +77,12 @@ export default function App() {
           {/* Frota fixa imutável (redireciona ao showroom oficial) */}
           <Route path="/frota" element={<Navigate to="/cars" replace />} />
 
-          {/* Gestão de Pilotos & Usuários (Race Control) */}
+          {/* Gestão de Pilotos & Usuários */}
           <Route
             path="/admin/usuarios"
             element={
               <ProtectedRoute allowedRoles={['ADMIN']}>
-                <PageTransition><AdminDashboardPage /></PageTransition>
+                <PageTransition><AdminUsersPage /></PageTransition>
               </ProtectedRoute>
             }
           />
@@ -101,8 +131,10 @@ export default function App() {
           />
         </Route>
 
-        <Route path="/*" element={<PageTransition><NotFound /></PageTransition>} />
-      </Routes>
+        <Route path="/erro" element={<PageTransition><ErrorPage /></PageTransition>} />
+        <Route path="/*" element={<PageTransition><ErrorPage code="404" /></PageTransition>} />
+        </Routes>
+      </ErrorBoundary>
     </Router>
   );
 }

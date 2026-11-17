@@ -96,38 +96,37 @@ public class DataInitializer {
             circuitoRepository.findAll().forEach(c -> circuitosMap.put(c.getId(), c));
         }
 
-        // Limpa slots residuais sem reservas em dias de manutenção (segunda-feira) ou noturnos de terça a quinta
+        // Limpa slots futuros sem reservas que não pertencem ao calendário realista do circuito
+        LocalDate hoje = LocalDate.now();
         trackSlotRepository.findAll().forEach(slot -> {
-            if (slot.getVagasOcupadas() != null && slot.getVagasOcupadas() == 0 && slot.getData() != null) {
-                DayOfWeek dow = slot.getData().getDayOfWeek();
-                boolean isSegunda = dow == DayOfWeek.MONDAY;
-                boolean isNoturnoMeioSemana = "NOTURNO".equalsIgnoreCase(slot.getTurno())
-                        && (dow == DayOfWeek.TUESDAY || dow == DayOfWeek.WEDNESDAY || dow == DayOfWeek.THURSDAY);
-                if (isSegunda || isNoturnoMeioSemana) {
+            if (slot.getVagasOcupadas() != null && slot.getVagasOcupadas() == 0
+                    && slot.getData() != null && !slot.getData().isBefore(hoje)
+                    && slot.getCircuito() != null) {
+                List<String> turnosEsperados = turnosEsperadosParaDia(slot.getCircuito().getId(), slot.getData());
+                String turnoSlot = slot.getTurno() != null ? slot.getTurno().toUpperCase() : "";
+                if (!turnosEsperados.contains(turnoSlot)) {
                     trackSlotRepository.delete(slot);
                 }
             }
         });
 
-        // Garante slots agendáveis para os próximos 14 dias respeitando o calendário operacional:
-        // Seg: Fechado (Manutenção FIA) | Ter-Qui: Operação Reduzida (2 turnos) | Sex-Dom: Full Grid (3 turnos + Noturno)
-        LocalDate hoje = LocalDate.now();
+        // Garante slots agendáveis para os próximos 45 dias respeitando o calendário realista de cada autódromo
         for (Circuito c : circuitosMap.values()) {
-            for (int d = 1; d <= 14; d++) {
+            for (int d = 1; d <= 45; d++) {
                 LocalDate dataSlot = hoje.plusDays(d);
-                DayOfWeek dow = dataSlot.getDayOfWeek();
-                if (dow == DayOfWeek.MONDAY) {
-                    continue; // Manutenção de pista e calibração de cronometragem
+                List<String> turnosDia = turnosEsperadosParaDia(c.getId(), dataSlot);
+                if (turnosDia.isEmpty()) {
+                    continue;
                 }
-                boolean isFimDeSemana = (dow == DayOfWeek.FRIDAY || dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
-                if (isFimDeSemana) {
-                    criarSlotSeAusente(c, dataSlot, "MANHA", 12, d % 3 == 0 ? 4 : 2, BigDecimal.ZERO);
-                    criarSlotSeAusente(c, dataSlot, "TARDE", 14, d % 2 == 0 ? 6 : 3, new BigDecimal("250.00"));
-                    criarSlotSeAusente(c, dataSlot, "NOTURNO", 10, d % 4 == 0 ? 3 : 1, new BigDecimal("500.00"));
-                } else {
-                    // Terça a Quinta: menor procura -> menos vagas e sem sessão noturna
-                    criarSlotSeAusente(c, dataSlot, "MANHA", 5, d % 2 == 0 ? 1 : 0, BigDecimal.ZERO);
-                    criarSlotSeAusente(c, dataSlot, "TARDE", 6, d % 3 == 0 ? 2 : 1, new BigDecimal("250.00"));
+                for (String turno : turnosDia) {
+                    int vagasTotais = calcularCapacidadeTurno(c.getId(), dataSlot, turno);
+                    int vagasOcupadas = calcularOcupacaoInicial(c.getId(), d, turno, vagasTotais);
+                    BigDecimal taxaTurno = switch (turno) {
+                        case "TARDE" -> new BigDecimal("90.00");
+                        case "NOTURNO" -> new BigDecimal("180.00");
+                        default -> BigDecimal.ZERO;
+                    };
+                    criarSlotSeAusente(c, dataSlot, turno, vagasTotais, vagasOcupadas, taxaTurno);
                 }
             }
         }
@@ -146,41 +145,42 @@ public class DataInitializer {
         // 3. Cadastra os 8 Supercarros únicos, alocando cada um em 3 pistas (= 3 carros distintos por pista)
         if (automovelRepository.count() == 0 && owner != null) {
             registrarAutomovel("Porsche", "911 GT3 RS (992)", 2024, "POR-GT3RS-2024", "GT39E92",
-                    "3850.00", "/cars/porsche-studio.webp", 525, "3.2s", "296 km/h", "GT3",
+                    "1650.00", "/cars/porsche-studio.webp", 525, "3.2s", "296 km/h", "GT3",
                     List.of("nurburgring", "le_mans", "monaco"), circuitosMap, owner);
 
             registrarAutomovel("BMW", "M4 Competition Track", 2024, "BMW-M4C-2024", "M4C8E20",
-                    "2750.00", "/cars/bmw-studio.webp", 510, "3.5s", "290 km/h", "GT4",
+                    "990.00", "/cars/bmw-studio.webp", 510, "3.5s", "290 km/h", "GT4",
                     List.of("spa", "nurburgring", "silverstone"), circuitosMap, owner);
 
             registrarAutomovel("Mercedes-AMG", "GT Track Series", 2024, "AMG-GTR-2024", "AMG9E00",
-                    "3950.00", "/cars/amg-studio.webp", 734, "2.8s", "315 km/h", "GT2",
+                    "1790.00", "/cars/amg-studio.webp", 734, "2.8s", "315 km/h", "GT2",
                     List.of("monza", "nurburgring", "spa"), circuitosMap, owner);
 
             registrarAutomovel("Audi", "R8 V10 Performance", 2024, "AUD-R8V10-2024", "R8V1E00",
-                    "3400.00", "/cars/audi-studio.webp", 620, "3.1s", "331 km/h", "GT3",
+                    "1390.00", "/cars/audi-studio.webp", 620, "3.1s", "331 km/h", "GT3",
                     List.of("interlagos", "spa", "suzuka"), circuitosMap, owner);
 
             registrarAutomovel("Porsche", "718 Cayman GT4 RS", 2024, "POR-GT4RS-2024", "GT48E71",
-                    "3100.00", "/cars/cayman-studio.webp", 500, "3.4s", "315 km/h", "GT4",
+                    "1150.00", "/cars/cayman-studio.webp", 500, "3.4s", "315 km/h", "GT4",
                     List.of("monaco", "silverstone", "interlagos"), circuitosMap, owner);
 
             registrarAutomovel("BMW", "M8 Competition Coupé", 2024, "BMW-M8C-2024", "M8C9E92",
-                    "3250.00", "/cars/m8-studio.webp", 625, "3.2s", "305 km/h", "GT3",
+                    "1290.00", "/cars/m8-studio.webp", 625, "3.2s", "305 km/h", "GT3",
                     List.of("le_mans", "monza", "interlagos"), circuitosMap, owner);
 
             registrarAutomovel("Mercedes-AMG", "GT Black Series", 2024, "AMG-GTBS-2024", "AMGBS24",
-                    "4450.00", "/cars/amg-bs-studio.webp", 730, "3.2s", "325 km/h", "GT2",
+                    "1990.00", "/cars/amg-bs-studio.webp", 730, "3.2s", "325 km/h", "GT2",
                     List.of("silverstone", "le_mans", "suzuka"), circuitosMap, owner);
 
             registrarAutomovel("Audi", "RS e-tron GT Performance", 2025, "AUD-ETRON-2025", "ETR9E25",
-                    "3600.00", "/cars/etrongt-studio.webp", 925, "2.5s", "250 km/h", "ELECTRIC",
+                    "1490.00", "/cars/etrongt-studio.webp", 925, "2.5s", "250 km/h", "ELECTRIC",
                     List.of("suzuka", "monza", "monaco"), circuitosMap, owner);
 
             log.info("Frota unificada Apex inicializada: 8 supercarros com 3 autódromos cada (3 opções por pista).");
         } else {
-            // Garante sincronização dos 3 circuitos caso os carros já existam de carga anterior
+            // Garante sincronização dos 3 circuitos e atualização de preços seed legados
             sincronizarCircuitosExistentes(circuitosMap);
+            sincronizarPrecosReais();
         }
 
         // 4. Task automática: garante que toda sessão agendada possua QR Code criptográfico FIA Pass
@@ -230,17 +230,99 @@ public class DataInitializer {
         piloto.setCnhCategoria("B");
         piloto.setDataNascimento(LocalDate.of(1995, 5, 15));
         piloto.setStatusConta("ATIVO");
-        piloto.creditarSaldo(new BigDecimal("50000.00"));
+        piloto.creditarSaldo(new BigDecimal("5000.00"));
 
         Cliente salvo = clienteRepository.save(piloto);
         transacaoRepository.save(new TransacaoApexPay(
                 salvo,
                 "DEPOSITO",
-                new BigDecimal("50000.00"),
+                new BigDecimal("5000.00"),
                 "Crédito inicial conta de testes ApexPay",
                 null
         ));
         log.info("Conta de teste inicializada: {} (ROLE_CLIENTE).", emailTeste);
+    }
+
+    private List<String> turnosEsperadosParaDia(String circuitoId, LocalDate data) {
+        DayOfWeek dow = data.getDayOfWeek();
+        if (dow == DayOfWeek.MONDAY) {
+            return List.of();
+        }
+        int dom = data.getDayOfMonth();
+        int weekOfYear = data.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+        int month = data.getMonthValue();
+        boolean isWeekend = (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY);
+
+        return switch (circuitoId) {
+            case "nurburgring" -> {
+                // Touristenfahrten: fim de semana o dia todo; terça e quinta no fim da tarde
+                if (isWeekend) yield List.of("MANHA", "TARDE");
+                if (dow == DayOfWeek.TUESDAY || dow == DayOfWeek.THURSDAY) yield List.of("TARDE");
+                yield List.of();
+            }
+            case "spa" -> {
+                // Open Pitlane: fins de semana + sextas selecionadas + quartas alternadas (sem noturno)
+                if (isWeekend && (weekOfYear % 4 != 2)) yield List.of("MANHA", "TARDE");
+                if (dow == DayOfWeek.FRIDAY && dom % 2 == 0) yield List.of("MANHA", "TARDE");
+                if (dow == DayOfWeek.WEDNESDAY && dom % 2 == 0) yield List.of("MANHA", "TARDE");
+                yield List.of();
+            }
+            case "monza" -> {
+                // Monza Track Days: bloqueio na janela do GP da Itália (fim ago / início set); Sáb/Dom + Sex alternada
+                boolean gpWindow = (month == 8 && dom >= 28) || (month == 9 && dom <= 7);
+                if (gpWindow) yield List.of();
+                if (isWeekend || (dow == DayOfWeek.FRIDAY && dom % 2 == 1)) yield List.of("MANHA", "TARDE");
+                yield List.of();
+            }
+            case "le_mans" -> {
+                // Circuito Bugatti: ~2 fins de semana por mês + noturno especial de endurance no sábado
+                boolean bugattiWindow = (dom >= 1 && dom <= 7) || (dom >= 15 && dom <= 21);
+                if (!bugattiWindow) yield List.of();
+                if (dow == DayOfWeek.SATURDAY) yield List.of("MANHA", "TARDE", "NOTURNO");
+                if (dow == DayOfWeek.SUNDAY) yield List.of("MANHA", "TARDE");
+                yield List.of();
+            }
+            case "monaco" -> {
+                // Circuito de rua: datas exclusivas quinzenais (Sáb/Dom) com grid reduzido
+                if (isWeekend && weekOfYear % 2 == 0) yield List.of("MANHA", "TARDE");
+                yield List.of();
+            }
+            case "silverstone" -> {
+                // Calendário intenso Open Pitlane (102 dB): Sex/Sáb/Dom + Quartas alternadas
+                if (dow == DayOfWeek.FRIDAY || isWeekend || (dow == DayOfWeek.WEDNESDAY && dom % 2 == 0)) {
+                    yield List.of("MANHA", "TARDE");
+                }
+                yield List.of();
+            }
+            case "interlagos" -> {
+                // Track days de promotores: Sáb/Dom (3 de 4 semanas) + Sextas alternadas (08h-18h, sem noturno)
+                if ((isWeekend && weekOfYear % 4 != 1) || (dow == DayOfWeek.FRIDAY && dom % 2 == 0)) {
+                    yield List.of("MANHA", "TARDE");
+                }
+                yield List.of();
+            }
+            case "suzuka" -> {
+                // Suzuka SMSC Sports Driving: fins de semana alternados + terças alternadas
+                if ((isWeekend && weekOfYear % 2 == 1) || (dow == DayOfWeek.TUESDAY && dom % 2 == 1)) {
+                    yield List.of("MANHA", "TARDE");
+                }
+                yield List.of();
+            }
+            default -> isWeekend ? List.of("MANHA", "TARDE") : List.of();
+        };
+    }
+
+    private int calcularCapacidadeTurno(String circuitoId, LocalDate data, String turno) {
+        if ("monaco".equals(circuitoId)) return 6;
+        if ("nurburgring".equals(circuitoId) && data.getDayOfWeek().getValue() <= 5) return 8;
+        if ("NOTURNO".equals(turno)) return 10;
+        return "TARDE".equals(turno) ? 14 : 12;
+    }
+
+    private int calcularOcupacaoInicial(String circuitoId, int dayOffset, String turno, int capacidade) {
+        if ("monaco".equals(circuitoId)) return Math.min(capacidade - 2, 2 + (dayOffset % 2));
+        int base = "TARDE".equals(turno) ? (dayOffset % 2 == 0 ? 4 : 2) : (dayOffset % 3 == 0 ? 3 : 1);
+        return Math.min(Math.max(capacidade - 2, 0), base);
     }
 
     private void criarSlotSeAusente(Circuito c, LocalDate data, String turno, int total, int ocupadas, BigDecimal taxa) {
@@ -292,6 +374,50 @@ public class DataInitializer {
             if (ids != null && (carro.getCircuitosDisponiveis() == null || carro.getCircuitosDisponiveis().size() < 3)) {
                 ids.forEach(cid -> carro.adicionarCircuito(circuitosMap.get(cid)));
                 automovelRepository.update(carro);
+            }
+        });
+    }
+
+    private void sincronizarPrecosReais() {
+        Map<String, BigDecimal> precosAntigosParaNovos = Map.of(
+                "POR-GT3RS-2024", new BigDecimal("1650.00"),
+                "BMW-M4C-2024", new BigDecimal("990.00"),
+                "AMG-GTR-2024", new BigDecimal("1790.00"),
+                "AUD-R8V10-2024", new BigDecimal("1390.00"),
+                "POR-GT4RS-2024", new BigDecimal("1150.00"),
+                "BMW-M8C-2024", new BigDecimal("1290.00"),
+                "AMG-GTBS-2024", new BigDecimal("1990.00"),
+                "AUD-ETRON-2025", new BigDecimal("1490.00")
+        );
+        Map<String, BigDecimal> precosLegados = Map.of(
+                "POR-GT3RS-2024", new BigDecimal("3850.00"),
+                "BMW-M4C-2024", new BigDecimal("2750.00"),
+                "AMG-GTR-2024", new BigDecimal("3950.00"),
+                "AUD-R8V10-2024", new BigDecimal("3400.00"),
+                "POR-GT4RS-2024", new BigDecimal("3100.00"),
+                "BMW-M8C-2024", new BigDecimal("3250.00"),
+                "AMG-GTBS-2024", new BigDecimal("4450.00"),
+                "AUD-ETRON-2025", new BigDecimal("3600.00")
+        );
+
+        automovelRepository.findAll().forEach(carro -> {
+            BigDecimal legado = precosLegados.get(carro.getMatricula());
+            BigDecimal atualizado = precosAntigosParaNovos.get(carro.getMatricula());
+            if (legado != null && atualizado != null && carro.getPrecoPorDia() != null
+                    && carro.getPrecoPorDia().compareTo(legado) == 0) {
+                carro.setPrecoPorDia(atualizado);
+                automovelRepository.update(carro);
+            }
+        });
+
+        trackSlotRepository.findAll().forEach(slot -> {
+            if (slot.getTaxaAdicionalTurno() == null) return;
+            if (slot.getTaxaAdicionalTurno().compareTo(new BigDecimal("250.00")) == 0) {
+                slot.setTaxaAdicionalTurno(new BigDecimal("90.00"));
+                trackSlotRepository.update(slot);
+            } else if (slot.getTaxaAdicionalTurno().compareTo(new BigDecimal("500.00")) == 0) {
+                slot.setTaxaAdicionalTurno(new BigDecimal("180.00"));
+                trackSlotRepository.update(slot);
             }
         });
     }

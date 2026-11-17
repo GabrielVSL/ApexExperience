@@ -129,7 +129,7 @@ const SERVICE_OPTIONS: ServiceOption[] = [
     badge: 'Paddock · Sem CNH',
     description: 'Tour técnico guiado pelo pitlane, boxes e briefing com a equipe.',
     multiplier: 0,
-    fixedPrice: 890,
+    fixedPrice: 190,
     requiresCar: false,
     requiresCnh: false,
   },
@@ -197,7 +197,7 @@ export function SessionBookingModal({
 }: SessionBookingModalProps) {
   const navigate = useNavigate();
   const { user, token } = useAuthStore();
-  const { formatPrice } = useCurrencyStore();
+  const { formatPrice, formatCircuitEquivalent } = useCurrencyStore();
 
   const [fleetCars, setFleetCars] = useState<Automovel[]>([]);
   const [selectedService, setSelectedService] = useState<ServiceType>('TRACK_EXPERIENCE');
@@ -964,6 +964,11 @@ export function SessionBookingModal({
                         Verificar data
                       </span>
                     </button>
+                    {activeCircuitMeta?.scheduleSummary && (
+                      <p className="text-[11px] text-white/45 px-1">
+                        {activeCircuitMeta.scheduleSummary}
+                      </p>
+                    )}
                   </div>
 
                   {/* Pagamento & Saldo */}
@@ -1046,9 +1051,25 @@ export function SessionBookingModal({
                       <div className="text-2xl font-semibold text-white tabular-nums leading-none">
                         {formatPrice(pricing.finalPrice)}
                       </div>
-                      <span className="text-[11px] text-white/45">
+                      <span className="text-[11px] text-white/45 block mt-1">
                         por sessão {pricing.shiftFee > 0 ? '(incl. adicional turno)' : ''}
                       </span>
+                      {(() => {
+                        const foreignEquiv = formatCircuitEquivalent(
+                          pricing.finalPrice,
+                          selectedCircuitId
+                        );
+                        if (!foreignEquiv) return null;
+                        return (
+                          <span className="text-[11px] text-white/60 block mt-0.5 tabular-nums">
+                            Pista internacional · equivale a ~{' '}
+                            <strong className="font-medium text-white/85">
+                              {foreignEquiv.formatted}
+                            </strong>{' '}
+                            ({foreignEquiv.label})
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {!isAuthenticated ? (

@@ -93,15 +93,23 @@ public class AdminDashboardFacade {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Juros de inadimplência arrecadados
-        BigDecimal totalJuros = StreamSupport.stream(transacaoRepository.findAll().spliterator(), false)
-                .filter(t -> "JUROS_ATRASO".equals(t.getTipo()))
+        List<TransacaoApexPay> transacoesJuros = StreamSupport.stream(transacaoRepository.findAll().spliterator(), false)
+                .filter(t -> "JUROS_ATRASO".equals(t.getTipo()) && t.getValor() != null)
+                .toList();
+
+        BigDecimal totalJuros = transacoesJuros.stream()
                 .map(TransacaoApexPay::getValor)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Taxas de cancelamento/remarcação retidas (100% margem líquida)
+        BigDecimal totalTaxasRetidas = todosPedidos.stream()
+                .map(Pedido::getTaxaAplicada)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Lucro líquido estimado (receita confirmada - 32% custo de pista/pneus/combustível + juros + sinistros)
+        // Lucro líquido estimado (68% da receita confirmada + juros + sinistros + taxas de cancelamento/remarcação)
         BigDecimal margemOperacional = faturamentoConfirmado.multiply(new BigDecimal("0.68")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal lucroLiquido = margemOperacional.add(totalJuros).add(totalSinistros);
+        BigDecimal lucroLiquido = margemOperacional.add(totalJuros).add(totalSinistros).add(totalTaxasRetidas);
 
         long totalSessoesAgendadas = todosPedidos.size();
         long sessoesConfirmadas = todosPedidos.stream().filter(p -> "APROVADO".equals(p.getStatus())).count();
@@ -132,6 +140,7 @@ public class AdminDashboardFacade {
             Map<String, Object> ponto = new LinkedHashMap<>();
             ponto.put("mes", label);
             ponto.put("faturamento", BigDecimal.ZERO);
+            ponto.put("faturamentoPendente", BigDecimal.ZERO);
             ponto.put("lucro", BigDecimal.ZERO);
             ponto.put("sessoes", 0);
             timelineMap.put(ym.toString(), ponto);
@@ -145,20 +154,50 @@ public class AdminDashboardFacade {
                     Map<String, Object> m = new LinkedHashMap<>();
                     m.put("mes", ym.format(mesFmt).toUpperCase());
                     m.put("faturamento", BigDecimal.ZERO);
+                    m.put("faturamentoPendente", BigDecimal.ZERO);
                     m.put("lucro", BigDecimal.ZERO);
                     m.put("sessoes", 0);
                     return m;
                 });
 
                 BigDecimal val = p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO);
+                BigDecimal sinistro = p.getValorSinistro() != null ? p.getValorSinistro() : BigDecimal.ZERO;
+                BigDecimal taxaRetida = p.getTaxaAplicada() != null ? p.getTaxaAplicada() : BigDecimal.ZERO;
+
                 if ("APROVADO".equals(p.getStatus())) {
                     BigDecimal fatAtual = (BigDecimal) ponto.get("faturamento");
                     BigDecimal lucroAtual = (BigDecimal) ponto.get("lucro");
                     ponto.put("faturamento", fatAtual.add(val));
-                    ponto.put("lucro", lucroAtual.add(val.multiply(new BigDecimal("0.68")).setScale(2, RoundingMode.HALF_UP)));
+                    ponto.put("lucro", lucroAtual
+                            .add(val.multiply(new BigDecimal("0.68")).setScale(2, RoundingMode.HALF_UP))
+                            .add(sinistro)
+                            .add(taxaRetida));
+                } else if ("AGUARDANDO_APROVACAO".equals(p.getStatus())
+                        || "PENDENTE_EMPRESA".equals(p.getStatus())
+                        || "PENDENTE_BANCO".equals(p.getStatus())
+                        || "PENDENTE".equals(p.getStatus())
+                        || "REVISAO_CLIENTE".equals(p.getStatus())) {
+                    BigDecimal pendAtual = (BigDecimal) ponto.get("faturamentoPendente");
+                    ponto.put("faturamentoPendente", pendAtual.add(val));
+                } else if (taxaRetida.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal fatAtual = (BigDecimal) ponto.get("faturamento");
+                    BigDecimal lucroAtual = (BigDecimal) ponto.get("lucro");
+                    if ("CANCELADO".equals(p.getStatus())) {
+                        ponto.put("faturamento", fatAtual.add(taxaRetida));
+                    }
+                    ponto.put("lucro", lucroAtual.add(taxaRetida));
                 }
                 int sess = (int) ponto.get("sessoes");
                 ponto.put("sessoes", sess + 1);
+            }
+        }
+
+        for (TransacaoApexPay jurosTx : transacoesJuros) {
+            YearMonth ym = jurosTx.getDataHora() != null ? YearMonth.from(jurosTx.getDataHora()) : ymAtual;
+            Map<String, Object> ponto = timelineMap.get(ym.toString());
+            if (ponto != null) {
+                BigDecimal lucroAtual = (BigDecimal) ponto.get("lucro");
+                ponto.put("lucro", lucroAtual.add(jurosTx.getValor()));
             }
         }
         kpis.put("timelineFaturamento", new ArrayList<>(timelineMap.values()));
@@ -166,11 +205,17 @@ public class AdminDashboardFacade {
         // 1.2 Distribuição de receita e volume por modalidade de serviço
         Map<String, Map<String, Object>> modalidadesMap = new LinkedHashMap<>();
         for (Pedido p : todosPedidos) {
-            String tipo = p.getTipoServico() != null ? p.getTipoServico() : "TRACK_DAY";
-            String label = switch (tipo) {
-                case "HOT_LAP_COACH" -> "Hot Lap Coach";
+            if ("CANCELADO".equals(p.getStatus()) || "REJEITADO".equals(p.getStatus())) {
+                continue;
+            }
+            String tipo = p.getTipoServico() != null ? p.getTipoServico() : "TRACK_EXPERIENCE";
+            String label = switch (tipo.toUpperCase()) {
+                case "FAST_LAP" -> "Fast Lap";
+                case "PACOTE_VIP" -> "Pacote VIP";
                 case "VISITA_BOX" -> "Visita ao Box";
-                default -> "Track Day Oficial";
+                case "HOT_LAP_COACH" -> "Hot Lap Coach";
+                case "TRACK_EXPERIENCE", "TRACK_DAY" -> "Track Experience";
+                default -> tipo;
             };
             modalidadesMap.compute(label, (k, v) -> {
                 if (v == null) {
@@ -189,9 +234,12 @@ public class AdminDashboardFacade {
         }
         kpis.put("distribuicaoModalidades", new ArrayList<>(modalidadesMap.values()));
 
-        // 2. Faturamento por Autódromo / Circuito
+        // 2. Faturamento por Autódromo / Circuito (sessões ativas ou confirmadas)
         Map<String, BigDecimal> faturamentoPorCircuito = new HashMap<>();
         for (Pedido p : todosPedidos) {
+            if ("CANCELADO".equals(p.getStatus()) || "REJEITADO".equals(p.getStatus())) {
+                continue;
+            }
             String nomeCircuito = resolverNomeCircuito(p);
             BigDecimal valor = p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO);
             faturamentoPorCircuito.merge(nomeCircuito, valor, BigDecimal::add);
@@ -229,7 +277,9 @@ public class AdminDashboardFacade {
 
         // 4. Supercarros Mais Pilotados
         Map<String, Long> carrosMaisAlugados = todosPedidos.stream()
-                .filter(p -> p.getAutomovel() != null)
+                .filter(p -> p.getAutomovel() != null
+                        && !"CANCELADO".equals(p.getStatus())
+                        && !"REJEITADO".equals(p.getStatus()))
                 .collect(Collectors.groupingBy(p -> p.getAutomovel().getMarca() + " " + p.getAutomovel().getModelo(), Collectors.counting()));
         kpis.put("supercarrosMaisPilotados", carrosMaisAlugados);
 
