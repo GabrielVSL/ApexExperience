@@ -3,6 +3,7 @@ package com.aluguel.security;
 import com.aluguel.models.*;
 import com.aluguel.repositories.*;
 import com.aluguel.services.QrCodePassService;
+import com.aluguel.utils.CnhValidator;
 import io.micronaut.context.event.StartupEvent;
 import io.micronaut.runtime.event.annotation.EventListener;
 import jakarta.inject.Singleton;
@@ -25,6 +26,7 @@ public class DataInitializer {
 
     private final UsuarioRepository usuarioRepository;
     private final AgenteRepository agenteRepository;
+    private final ClienteRepository clienteRepository;
     private final AutomovelRepository automovelRepository;
     private final CircuitoRepository circuitoRepository;
     private final TrackSlotRepository trackSlotRepository;
@@ -34,6 +36,7 @@ public class DataInitializer {
 
     public DataInitializer(UsuarioRepository usuarioRepository,
                            AgenteRepository agenteRepository,
+                           ClienteRepository clienteRepository,
                            AutomovelRepository automovelRepository,
                            CircuitoRepository circuitoRepository,
                            TrackSlotRepository trackSlotRepository,
@@ -42,6 +45,7 @@ public class DataInitializer {
                            QrCodePassService qrCodePassService) {
         this.usuarioRepository = usuarioRepository;
         this.agenteRepository = agenteRepository;
+        this.clienteRepository = clienteRepository;
         this.automovelRepository = automovelRepository;
         this.circuitoRepository = circuitoRepository;
         this.trackSlotRepository = trackSlotRepository;
@@ -137,6 +141,7 @@ public class DataInitializer {
                 "99887766000122"
         );
         limparDadosLegados(owner);
+        ensureClienteTeste();
 
         // 3. Cadastra os 8 Supercarros únicos, alocando cada um em 3 pistas (= 3 carros distintos por pista)
         if (automovelRepository.count() == 0 && owner != null) {
@@ -202,6 +207,40 @@ public class DataInitializer {
             log.info("Conta operacional inicializada: {} ({}).", email, role);
             return salvo;
         });
+    }
+
+    private void ensureClienteTeste() {
+        String emailTeste = "teste@gmail.com";
+        String cpfTeste = "111.222.333-99";
+        if (usuarioRepository.findByEmail(emailTeste).isPresent() || clienteRepository.findByCpf(cpfTeste).isPresent()) {
+            return;
+        }
+
+        Cliente piloto = new Cliente();
+        piloto.setNome("Piloto Teste");
+        piloto.setEmail(emailTeste);
+        piloto.setSenha(BCrypt.hashpw("122456", BCrypt.gensalt()));
+        piloto.setRole("ROLE_CLIENTE");
+        piloto.setCpf(cpfTeste);
+        piloto.setRg("MG-12.345.678");
+        piloto.setProfissao("Piloto de Testes");
+        piloto.setEndereco("Av. Interlagos, 1000 - São Paulo, SP");
+        piloto.setTelefone("11988887777");
+        piloto.setCnhNumero(CnhValidator.CNH_TESTE_OFICIAL);
+        piloto.setCnhCategoria("B");
+        piloto.setDataNascimento(LocalDate.of(1995, 5, 15));
+        piloto.setStatusConta("ATIVO");
+        piloto.creditarSaldo(new BigDecimal("50000.00"));
+
+        Cliente salvo = clienteRepository.save(piloto);
+        transacaoRepository.save(new TransacaoApexPay(
+                salvo,
+                "DEPOSITO",
+                new BigDecimal("50000.00"),
+                "Crédito inicial conta de testes ApexPay",
+                null
+        ));
+        log.info("Conta de teste inicializada: {} (ROLE_CLIENTE).", emailTeste);
     }
 
     private void criarSlotSeAusente(Circuito c, LocalDate data, String turno, int total, int ocupadas, BigDecimal taxa) {

@@ -56,4 +56,14 @@ class DemoTest {
         HttpResponse<?> resp = client.toBlocking().exchange(req);
         Assertions.assertEquals("https://apex-experience.vercel.app", resp.getHeaders().get("Access-Control-Allow-Origin"));
     }
+
+    @Test
+    void testContaTesteInicializada() {
+        HttpRequest<?> loginReq = HttpRequest.POST("/login",
+                java.util.Map.of("username", "teste@gmail.com", "password", "122456"));
+
+        HttpResponse<java.util.Map> resp = client.toBlocking().exchange(loginReq, java.util.Map.class);
+        Assertions.assertEquals(200, resp.getStatus().getCode());
+        Assertions.assertNotNull(resp.body().get("access_token"));
+    }
 }

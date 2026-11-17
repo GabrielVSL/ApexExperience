@@ -26,7 +26,7 @@ import {
   LoginFormInputs,
   RegisterFormInputs,
 } from '@/schemas/authSchema';
-import AntigravityParticlesBackground from '../components/AntigravityParticlesBackground';
+import MicroSlats from '../components/MicroSlats';
 import ApexDatePicker from '@/components/ui/ApexDatePicker';
 
 type AuthMode = 'login' | 'register';
@@ -310,14 +310,46 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
       className="relative min-h-[100dvh] w-full bg-black text-white p-3 sm:p-6 md:p-10 flex items-center justify-center overflow-hidden selection:bg-[#FF1717] selection:text-white"
     >
       {/* ========================================================
-          1. EFEITO ANTIGRAVITY (REACT BITS / GOOGLE ANTIGRAVITY WEBGL2)
+          1. EFEITO MICRO SLATS (FLUIDO WEBGL2 — PALETA APEX)
          ======================================================== */}
-      <AntigravityParticlesBackground />
+      <div
+        className="fixed inset-0 pointer-events-auto z-0 overflow-hidden bg-[#08090C] select-none"
+        aria-hidden="true"
+      >
+        <MicroSlats
+          preset="swell"
+          color="#FF1717"
+          glintColor="#ffffff"
+          backgroundColor="#08090C"
+          slatWidth={10}
+          slatHeight={25}
+          gap={3}
+          roundness={0.75}
+          interactive
+          cursorStrength={1}
+          cursorSize={40}
+          swirl={0}
+          trail={1.4}
+          lean={0}
+          intro
+          scale={1.5}
+          speed={0.6}
+          direction={250}
+          chop={0.55}
+          stretch={0}
+          glint={0.7}
+          contrast={1.25}
+          perspective={0.55}
+          fog={0.55}
+          introDuration={1.5}
+          paused={false}
+        />
+      </div>
 
       {/* ========================================================
-          2. PALCO CENTRAL (ALTURA ESTÁVEL — FROSTED GLASS TRANSLÚCIDO)
+          2. PALCO CENTRAL (ALTURA ESTÁVEL — VÍDEO /login.mp4 + GLASS)
          ======================================================== */}
-      <div className="relative z-10 w-full max-w-5xl h-[670px] min-h-[640px] max-h-[92vh] rounded-[30px] sm:rounded-[36px] overflow-hidden border border-white/10 shadow-[0_40px_120px_rgba(0,0,0,0.95)] flex flex-col justify-between bg-[#08090C]/60 backdrop-blur-xl">
+      <div className="relative z-10 w-full max-w-5xl h-[670px] min-h-[640px] max-h-[92vh] rounded-[30px] sm:rounded-[36px] overflow-hidden border border-white/15 shadow-[0_40px_120px_rgba(0,0,0,0.95)] flex flex-col justify-between bg-[#08090C]/50 backdrop-blur-xl">
         {/* Vídeo noturno dentro do palco central */}
         <div className="absolute inset-0 z-0 pointer-events-none">
           <video
@@ -326,9 +358,9 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
             loop
             muted
             playsInline
-            className="w-full h-full object-cover filter brightness-[0.82] contrast-[1.15] scale-[1.01]"
+            className="w-full h-full object-cover object-center filter brightness-[1.15] contrast-[1.12] scale-[1.01]"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#08090C]/60 via-[#08090C]/25 to-[#08090C]/70" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#08090C]/40 via-transparent to-[#08090C]/45" />
         </div>
 
         {/* Barra superior dentro da moldura: Logo à esquerda + Botão minimalista de voltar com seta */}
@@ -358,7 +390,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
             3. CARD CENTRAL FROSTED GLASS (DIMENSÃO FIXA ANTI-PULO)
            ======================================================== */}
         <main className="relative z-20 flex-1 flex items-center justify-center px-4 py-4 sm:py-6">
-          <div className="w-full max-w-[440px] min-h-[535px] rounded-[26px] bg-[#0A0D14]/75 backdrop-blur-2xl border border-white/20 shadow-[0_28px_80px_rgba(0,0,0,0.75),0_0_40px_rgba(255,23,23,0.09)] p-5 sm:p-7 flex flex-col justify-between relative overflow-hidden">
+          <div className="w-full max-w-[440px] min-h-[535px] rounded-[26px] bg-[#0A0D14]/45 backdrop-blur-md border border-white/20 shadow-[0_28px_80px_rgba(0,0,0,0.75),0_0_40px_rgba(255,23,23,0.09)] p-5 sm:p-7 flex flex-col justify-between relative overflow-hidden">
             {/* Topo Fixo: Título, Subtítulo e Seletor Login / Cadastro */}
             <div className="shrink-0">
               <div className="text-center mb-4">

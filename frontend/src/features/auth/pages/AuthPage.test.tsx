@@ -9,7 +9,7 @@ describe('AuthPage Component', () => {
     useAuthStore.getState().logout();
   });
 
-  it('deve iniciar na aba Login selecionada com canvas Antigravity embutido no fundo', () => {
+  it('deve iniciar na aba Login selecionada com fundo MicroSlats embutido', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/login']}>
         <Routes>
@@ -24,7 +24,7 @@ describe('AuthPage Component', () => {
     expect(loginTab.getAttribute('aria-selected')).toBe('true');
     expect(cadastroTab.getAttribute('aria-selected')).toBe('false');
     expect(screen.getByText('LOGIN')).toBeDefined();
-    expect(container.querySelector('canvas')).toBeDefined();
+    expect(container.querySelector('.micro-slats')).not.toBeNull();
   }, 15000);
 
   it('deve alternar para Cadastro na Etapa 1 de 3 e avançar etapas mediante validação', async () => {
