@@ -136,12 +136,15 @@ public class Usuario {
 
     public String getTelefone() { return telefone; }
     public void setTelefone(String telefone) { this.telefone = telefone; }
+    @JsonIgnore
     public String getCodigoRecuperacao() { return codigoRecuperacao; }
     public void setCodigoRecuperacao(String codigoRecuperacao) { this.codigoRecuperacao = codigoRecuperacao; }
+    @JsonIgnore
     public LocalDateTime getCodigoRecuperacaoExpiraEm() { return codigoRecuperacaoExpiraEm; }
     public void setCodigoRecuperacaoExpiraEm(LocalDateTime codigoRecuperacaoExpiraEm) { this.codigoRecuperacaoExpiraEm = codigoRecuperacaoExpiraEm; }
     public String getStatusConta() { return statusConta != null ? statusConta : "ATIVO"; }
     public void setStatusConta(String statusConta) { this.statusConta = statusConta; }
+    @JsonIgnore
     public Integer getTentativasRecuperacao() { return tentativasRecuperacao != null ? tentativasRecuperacao : 0; }
     public void setTentativasRecuperacao(Integer tentativasRecuperacao) { this.tentativasRecuperacao = tentativasRecuperacao; }
 }

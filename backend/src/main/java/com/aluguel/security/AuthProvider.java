@@ -28,29 +28,36 @@ public class AuthProvider<T> implements AuthenticationProvider<T> {
     public Publisher<AuthenticationResponse> authenticate(T httpRequest,
                                                           AuthenticationRequest<?, ?> authRequest) {
         
-        String email = authRequest.getIdentity().toString();
-        String senhaDigitada = authRequest.getSecret().toString();
+        String rawEmail = authRequest.getIdentity() != null ? authRequest.getIdentity().toString().trim() : "";
+        String normalizedEmail = rawEmail.toLowerCase();
+        String senhaDigitada = authRequest.getSecret() != null ? authRequest.getSecret().toString() : "";
 
-        log.debug("Processando tentativa de login para o usuário: {}", email);
+        log.debug("Processando tentativa de login para o usuário: {}", normalizedEmail);
 
         return Flux.create(emitter -> {
-            var usuarioOpt = repository.findByEmail(email);
+            var usuarioOpt = repository.findByEmail(normalizedEmail)
+                    .or(() -> rawEmail.equals(normalizedEmail) ? java.util.Optional.empty() : repository.findByEmail(rawEmail));
 
             if (usuarioOpt.isPresent()) {
                 Usuario usuario = usuarioOpt.get();
-                
+
                 if (BCrypt.checkpw(senhaDigitada, usuario.getSenha())) {
-                    log.debug("Autenticação com sucesso para: {}", email);
-                    emitter.next(AuthenticationResponse.success(email, List.of(usuario.getRole())));
+                    if ("SUSPENSO".equalsIgnoreCase(usuario.getStatusConta())) {
+                        log.warn("Bloqueio de login para conta suspensa: {}", usuario.getEmail());
+                        emitter.error(AuthenticationResponse.exception("Esta conta foi suspensa pelo Race Control Apex."));
+                        return;
+                    }
+                    log.debug("Autenticação com sucesso para: {}", usuario.getEmail());
+                    emitter.next(AuthenticationResponse.success(usuario.getEmail(), List.of(usuario.getRole())));
                     emitter.complete();
                     return;
                 } else {
-                    log.warn("Falha de autenticação (senha inválida) para o usuário: {}", email);
+                    log.warn("Falha de autenticação (senha inválida) para o usuário: {}", normalizedEmail);
                 }
             } else {
-                log.warn("Falha de autenticação (usuário inexistente): {}", email);
+                log.warn("Falha de autenticação (usuário inexistente): {}", normalizedEmail);
             }
-            
+
             emitter.error(AuthenticationResponse.exception("Email ou senha inválidos"));
         });
     }

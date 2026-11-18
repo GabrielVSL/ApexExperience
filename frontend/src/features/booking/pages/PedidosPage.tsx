@@ -57,7 +57,7 @@ interface Pedido {
   valorTotal?: number;
   valorFinal?: number;
   valorSinistro?: number;
-  status: 'AGUARDANDO_APROVACAO' | 'PENDENTE_EMPRESA' | 'PENDENTE_BANCO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
+  status: 'AGUARDANDO_APROVACAO' | 'APROVADO' | 'REJEITADO' | 'CANCELADO' | 'REVISAO_CLIENTE';
   dataPedido: string;
 }
 
@@ -82,8 +82,6 @@ const SERVICE_LABEL: Record<string, string> = {
 const getStatusBadge = (status: Pedido['status']) => {
   switch (status) {
     case 'AGUARDANDO_APROVACAO':
-    case 'PENDENTE_EMPRESA':
-    case 'PENDENTE_BANCO':
       return {
         label: 'AGUARDANDO HOMOLOGAÇÃO',
         cls: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
@@ -308,12 +306,7 @@ export default function PedidosPage() {
   const pedidosFiltrados = pedidos.filter((p) => {
     if (filter === 'TODOS') return true;
     if (filter === 'PENDENTES') {
-      return (
-        p.status === 'AGUARDANDO_APROVACAO' ||
-        p.status === 'PENDENTE_EMPRESA' ||
-        p.status === 'PENDENTE_BANCO' ||
-        p.status === 'REVISAO_CLIENTE'
-      );
+      return p.status === 'AGUARDANDO_APROVACAO' || p.status === 'REVISAO_CLIENTE';
     }
     return p.status === filter;
   });
@@ -614,9 +607,7 @@ export default function PedidosPage() {
                       Janela da Sessão
                     </p>
                     {!isEditing &&
-                      ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
-                        pedidoSelecionado.status
-                      ) &&
+                      pedidoSelecionado.status === 'AGUARDANDO_APROVACAO' &&
                       user?.role === 'ADMIN' && (
                         <button
                           type="button"
@@ -731,9 +722,7 @@ export default function PedidosPage() {
                       )}
                     </button>
                   </div>
-                ) : ['AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO'].includes(
-                    pedidoSelecionado.status
-                  ) ? (
+                ) : pedidoSelecionado.status === 'AGUARDANDO_APROVACAO' ? (
                   user?.role === 'ADMIN' ? (
                     <div className="flex gap-3">
                       <button

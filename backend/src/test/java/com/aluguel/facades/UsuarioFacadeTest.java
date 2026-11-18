@@ -303,4 +303,26 @@ class UsuarioFacadeTest {
         );
         assertTrue(ex.getMessage().contains("Já existe outra conta cadastrada com este e-mail"));
     }
+
+    @Test
+    @DisplayName("Deve normalizar e-mail para minúsculas e remover espaços ao registrar piloto")
+    void deveNormalizarEmailAoRegistrar() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("role", "CLIENTE");
+        data.put("nome", "Piloto Upper");
+        data.put("email", "  Pilot@Apex.COM ");
+        data.put("password", "senha123");
+        data.put("cpf", "98765432100");
+        data.put("rg", "SP-99.888.777");
+        data.put("profissao", "Piloto");
+
+        when(usuarioRepository.findByEmail("pilot@apex.com")).thenReturn(Optional.empty());
+        when(clienteRepository.findByCpf("98765432100")).thenReturn(Optional.empty());
+        when(clienteRepository.save(any(Cliente.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Usuario usuario = usuarioFacade.registrar(data);
+
+        assertEquals("pilot@apex.com", usuario.getEmail());
+        verify(usuarioRepository).findByEmail("pilot@apex.com");
+    }
 }

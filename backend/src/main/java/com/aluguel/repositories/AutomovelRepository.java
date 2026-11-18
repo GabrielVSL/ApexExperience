@@ -13,7 +13,7 @@ import io.micronaut.data.repository.CrudRepository;
 public interface AutomovelRepository extends CrudRepository<Automovel, Long> {
     @Query("SELECT a FROM Automovel a WHERE a.id NOT IN (" +
            "SELECT p.automovel.id FROM Pedido p WHERE p.automovel IS NOT NULL AND " +
-           "p.status IN ('AGUARDANDO_APROVACAO', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO', 'APROVADO', 'REVISAO_CLIENTE') " +
+           "p.status IN ('AGUARDANDO_APROVACAO', 'APROVADO', 'REVISAO_CLIENTE') " +
            "AND p.dataInicio <= :dataFim " +
            "AND p.dataFim >= :dataInicio)")
     List<Automovel> findDisponiveis(LocalDateTime dataInicio, LocalDateTime dataFim);

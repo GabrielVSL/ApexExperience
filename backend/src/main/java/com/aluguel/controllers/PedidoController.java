@@ -5,9 +5,11 @@ import com.aluguel.models.Pedido;
 import com.aluguel.queue.ReservaMensagem;
 import com.aluguel.queue.ReservaQueueEngine;
 import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.*;
 import io.micronaut.security.annotation.Secured;
 import io.micronaut.security.rules.SecurityRule;
+import jakarta.persistence.OptimisticLockException;
 import java.security.Principal;
 import java.util.Map;
 
@@ -29,6 +31,10 @@ public class PedidoController {
             Pedido salvo = facade.criarPedido(pedido, principal.getName());
             queueEngine.registrarSucessoSincrono(salvo);
             return HttpResponse.created(salvo);
+        } catch (OptimisticLockException e) {
+            String msg = "Vagas do circuito atualizadas simultaneamente por outro piloto. Tente novamente.";
+            queueEngine.registrarFalhaSincrona(pedido, principal.getName(), msg);
+            return HttpResponse.status(HttpStatus.CONFLICT).body(Map.of("message", msg));
         } catch (IllegalArgumentException | IllegalStateException e) {
             queueEngine.registrarFalhaSincrona(pedido, principal.getName(), e.getMessage());
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
@@ -125,6 +131,10 @@ public class PedidoController {
         try {
             Long novoSlotId = body != null ? body.get("trackSlotId") : null;
             return HttpResponse.ok(facade.reagendarPedidoCliente(id, principal.getName(), novoSlotId));
+        } catch (OptimisticLockException e) {
+            return HttpResponse.status(HttpStatus.CONFLICT).body(Map.of(
+                    "message", "Vagas do circuito atualizadas simultaneamente por outro piloto. Tente novamente."
+            ));
         } catch (Exception e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         }

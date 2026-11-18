@@ -14,7 +14,7 @@ interface CarsFilterProps {
   onClear: () => void;
 }
 
-export function getDayOperationProfile(dateStr: string): {
+function getDayOperationProfile(dateStr: string): {
   label: string;
   tone: string;
 } | null {

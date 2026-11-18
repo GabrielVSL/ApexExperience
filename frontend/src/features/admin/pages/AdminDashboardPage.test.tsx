@@ -52,7 +52,6 @@ const mockDashboardData = {
     totalPilotosCadastrados: 25,
     pilotosInadimplentes: 2,
     pilotosEmDia: 23,
-    pilotosVipApexBlack: 4,
     saldoTotalCustodiadoBRL: 120000,
     dividaAtivaTotalBRL: 9000,
   },

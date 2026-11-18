@@ -72,8 +72,6 @@ interface Pedido {
   status:
     | 'AGUARDANDO_APROVACAO'
     | 'PENDENTE'
-    | 'PENDENTE_EMPRESA'
-    | 'PENDENTE_BANCO'
     | 'APROVADO'
     | 'REJEITADO'
     | 'CANCELADO'
@@ -95,16 +93,6 @@ const statusConfig: Record<
   PENDENTE: {
     text: 'Em validação',
     pillClass: 'bg-white/[0.08] text-white/80',
-    icon: Clock,
-  },
-  PENDENTE_EMPRESA: {
-    text: 'Aguardando equipe',
-    pillClass: 'bg-amber-500/15 text-amber-300',
-    icon: Clock,
-  },
-  PENDENTE_BANCO: {
-    text: 'Em análise financeira',
-    pillClass: 'bg-sky-500/15 text-sky-300',
     icon: Clock,
   },
   REVISAO_CLIENTE: {
@@ -233,7 +221,7 @@ export default function MeusAlugueisPage() {
   const totalEmAnalise = useMemo(
     () =>
       pedidos.filter((p) =>
-        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO', 'REVISAO_CLIENTE'].includes(
+        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'REVISAO_CLIENTE'].includes(
           p.status
         )
       ).length,
@@ -245,7 +233,7 @@ export default function MeusAlugueisPage() {
     if (statusFilter === 'approved') return pedidos.filter((p) => p.status === 'APROVADO');
     if (statusFilter === 'pending') {
       return pedidos.filter((p) =>
-        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'PENDENTE_EMPRESA', 'PENDENTE_BANCO', 'REVISAO_CLIENTE'].includes(
+        ['AGUARDANDO_APROVACAO', 'PENDENTE', 'REVISAO_CLIENTE'].includes(
           p.status
         )
       );

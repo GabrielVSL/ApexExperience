@@ -515,4 +515,94 @@ class PedidoFacadeTest {
         );
     }
 
+    @Test
+    @DisplayName("Deve bloquear criação de pedido para contas SUSPENSO ou BLOQUEADO_RESERVAS")
+    void deveBloquearCriacaoPedidoParaContaSuspensaOuBloqueada() {
+        Automovel automovel = new Automovel();
+        automovel.setId(10L);
+        automovel.setPrecoPorDia(new BigDecimal("150.00"));
+
+        Cliente cliente = new Cliente();
+        cliente.setId(1L);
+        cliente.setEmail("cliente@rentcars.com");
+        cliente.setCnhNumero("52798802310");
+        cliente.setDataNascimento(LocalDate.of(1995, 1, 1));
+        cliente.setStatusFinanceiro("REGULAR");
+        cliente.setStatusConta("SUSPENSO");
+
+        Pedido pedidoInput = new Pedido();
+        pedidoInput.setAutomovel(automovel);
+        LocalDateTime inicio = proximoDiaAberto(2);
+        pedidoInput.setDataInicio(inicio);
+        pedidoInput.setDataFim(inicio.plusDays(1));
+
+        when(automovelRepository.findById(10L)).thenReturn(Optional.of(automovel));
+        when(pedidoRepository.countAlugueisConflitantes(eq(10L), any(), any())).thenReturn(0L);
+        when(usuarioRepository.findByEmail("cliente@rentcars.com")).thenReturn(Optional.of(cliente));
+
+        IllegalStateException exSuspenso = assertThrows(IllegalStateException.class, () ->
+            pedidoFacade.criarPedido(pedidoInput, "cliente@rentcars.com")
+        );
+        assertTrue(exSuspenso.getMessage().contains("suspensa"));
+
+        cliente.setStatusConta("BLOQUEADO_RESERVAS");
+        IllegalStateException exBloqueado = assertThrows(IllegalStateException.class, () ->
+            pedidoFacade.criarPedido(pedidoInput, "cliente@rentcars.com")
+        );
+        assertTrue(exBloqueado.getMessage().contains("bloqueada"));
+        verify(pedidoRepository, never()).save(any(Pedido.class));
+    }
+
+    @Test
+    @DisplayName("Deve resetar campos controlados pelo servidor injetados no payload de criação")
+    void deveIgnorarCamposControladosPeloServidorNaCriacao() {
+        Agente admin = new Agente();
+        admin.setEmail("admin@apex.com");
+
+        Automovel automovel = new Automovel();
+        automovel.setId(10L);
+        automovel.setPrecoPorDia(new BigDecimal("150.00"));
+        automovel.setProprietario(admin);
+
+        Cliente cliente = new Cliente();
+        cliente.setId(1L);
+        cliente.setEmail("cliente@rentcars.com");
+        cliente.setCnhNumero("52798802310");
+        cliente.setDataNascimento(LocalDate.of(1995, 1, 1));
+        cliente.setStatusFinanceiro("REGULAR");
+        cliente.setStatusConta("ATIVO");
+
+        Pedido pedidoInput = new Pedido();
+        pedidoInput.setId(999L);
+        pedidoInput.setVersion(42);
+        pedidoInput.setReagendamentosCount(5);
+        pedidoInput.setTaxaCancelamentoMinima(50);
+        pedidoInput.setTaxaAplicada(new BigDecimal("123.45"));
+        pedidoInput.setValorSinistro(new BigDecimal("999.00"));
+        pedidoInput.setMotivoSinistro("Injetado");
+        pedidoInput.setQrCodePayload("FAKE-QR");
+        pedidoInput.setTrackingCode("HACKED");
+        pedidoInput.setAutomovel(automovel);
+        LocalDateTime inicio = proximoDiaAberto(3);
+        pedidoInput.setDataInicio(inicio);
+        pedidoInput.setDataFim(inicio.plusDays(2));
+
+        when(automovelRepository.findById(10L)).thenReturn(Optional.of(automovel));
+        when(pedidoRepository.countAlugueisConflitantes(eq(10L), any(), any())).thenReturn(0L);
+        when(usuarioRepository.findByEmail("cliente@rentcars.com")).thenReturn(Optional.of(cliente));
+        when(pedidoRepository.save(any(Pedido.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Pedido criado = pedidoFacade.criarPedido(pedidoInput, "cliente@rentcars.com");
+
+        assertNull(criado.getId());
+        assertNull(criado.getVersion());
+        assertEquals(0, criado.getReagendamentosCount());
+        assertEquals(0, criado.getTaxaCancelamentoMinima());
+        assertEquals(BigDecimal.ZERO, criado.getTaxaAplicada());
+        assertEquals(BigDecimal.ZERO, criado.getValorSinistro());
+        assertNull(criado.getMotivoSinistro());
+        assertNull(criado.getQrCodePayload());
+        assertNotEquals("HACKED", criado.getTrackingCode());
+    }
+
 }

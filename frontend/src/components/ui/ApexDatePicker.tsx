@@ -96,7 +96,7 @@ export const ApexDatePicker: React.FC<ApexDatePickerProps> = ({
 
   // Máscara e digitação direta no input
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let raw = e.target.value.replace(/\D/g, '').slice(0, 8);
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 8);
     let formatted = raw;
     if (raw.length > 2 && raw.length <= 4) {
       formatted = `${raw.slice(0, 2)}/${raw.slice(2)}`;

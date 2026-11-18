@@ -195,10 +195,14 @@ public class DataInitializer {
             }
             return u;
         }).orElseGet(() -> {
+            String adminPass = System.getenv("ADMIN_DEMO_PASSWORD");
+            if (adminPass == null || adminPass.isBlank()) {
+                adminPass = "123456";
+            }
             Agente agente = new Agente();
             agente.setNome(nome);
             agente.setEmail(email);
-            agente.setSenha(BCrypt.hashpw("123456", BCrypt.gensalt()));
+            agente.setSenha(BCrypt.hashpw(adminPass.trim(), BCrypt.gensalt()));
             agente.setRole(role);
             agente.setEndereco(endereco);
             agente.setCnpj(cnpj);
@@ -216,10 +220,14 @@ public class DataInitializer {
             return;
         }
 
+        String testPass = System.getenv("TEST_PILOT_PASSWORD");
+        if (testPass == null || testPass.isBlank()) {
+            testPass = "122456";
+        }
         Cliente piloto = new Cliente();
         piloto.setNome("Piloto Teste");
         piloto.setEmail(emailTeste);
-        piloto.setSenha(BCrypt.hashpw("122456", BCrypt.gensalt()));
+        piloto.setSenha(BCrypt.hashpw(testPass.trim(), BCrypt.gensalt()));
         piloto.setRole("ROLE_CLIENTE");
         piloto.setCpf(cpfTeste);
         piloto.setRg("MG-12.345.678");

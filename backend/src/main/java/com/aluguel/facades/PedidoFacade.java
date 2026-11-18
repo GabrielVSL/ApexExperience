@@ -78,7 +78,7 @@ public class PedidoFacade {
     }
 
     public List<Map<String, String>> buscarDatasOcupadas(Long automovelId) {
-        List<String> statusAtivos = List.of("AGUARDANDO_APROVACAO", "PENDENTE_EMPRESA", "PENDENTE_BANCO", "APROVADO", "REVISAO_CLIENTE");
+        List<String> statusAtivos = List.of("AGUARDANDO_APROVACAO", "APROVADO", "REVISAO_CLIENTE");
         List<Pedido> pedidos = pedidoRepository.findByAutomovelIdAndStatusIn(automovelId, statusAtivos);
 
         return pedidos.stream().map(p -> Map.of(
@@ -89,6 +89,21 @@ public class PedidoFacade {
 
     @Transactional
     public Pedido criarPedido(Pedido pedido, String emailCliente) {
+        // Garante que campos controlados pelo servidor não sejam injetados no payload
+        pedido.setId(null);
+        pedido.setVersion(null);
+        pedido.setAgenteAvaliador(null);
+        pedido.setCheckInRealizadoEm(null);
+        pedido.setValorSinistro(BigDecimal.ZERO);
+        pedido.setMotivoSinistro(null);
+        pedido.setReagendamentosCount(0);
+        pedido.setTaxaCancelamentoMinima(0);
+        pedido.setTaxaAplicada(BigDecimal.ZERO);
+        pedido.setQrCodePayload(null);
+        pedido.setQrCodeAssinatura(null);
+        pedido.setQrCodeGeradoEm(null);
+        pedido.setTrackingCode(null);
+
         String servico = pedido.getTipoServico() != null ? pedido.getTipoServico() : "TRACK_EXPERIENCE";
         boolean isVisitaBox = "VISITA_BOX".equalsIgnoreCase(servico);
 
@@ -139,6 +154,13 @@ public class PedidoFacade {
         }
 
         Cliente cliente = (Cliente) usuario;
+
+        if ("SUSPENSO".equalsIgnoreCase(cliente.getStatusConta())) {
+            throw new IllegalStateException("Sua conta está suspensa pelo Race Control e não pode realizar agendamentos.");
+        }
+        if ("BLOQUEADO_RESERVAS".equalsIgnoreCase(cliente.getStatusConta())) {
+            throw new IllegalStateException("Sua conta está temporariamente bloqueada para novas reservas pelo Race Control.");
+        }
 
         if (cliente.isInadimplente()) {
             throw new IllegalArgumentException("Conta com pendências financeiras no ApexPay (Saldo: R$ " +
@@ -276,9 +298,7 @@ public class PedidoFacade {
         }
 
         String statusAtual = pedido.getStatus();
-        boolean aguardandoHomologacao = "AGUARDANDO_APROVACAO".equals(statusAtual)
-                || "PENDENTE_EMPRESA".equals(statusAtual)
-                || "PENDENTE_BANCO".equals(statusAtual);
+        boolean aguardandoHomologacao = "AGUARDANDO_APROVACAO".equals(statusAtual);
 
         if (!aguardandoHomologacao) {
             throw new IllegalArgumentException("Este pedido não está aguardando homologação.");
@@ -345,9 +365,7 @@ public class PedidoFacade {
         }
 
         String statusAtual = pedido.getStatus();
-        if (!"AGUARDANDO_APROVACAO".equals(statusAtual)
-                && !"PENDENTE_EMPRESA".equals(statusAtual)
-                && !"PENDENTE_BANCO".equals(statusAtual)) {
+        if (!"AGUARDANDO_APROVACAO".equals(statusAtual)) {
             throw new IllegalArgumentException("Apenas pedidos aguardando homologação podem receber contraproposta.");
         }
 

@@ -2,15 +2,14 @@
   <img width="70%" alt="pucminas" src="https://joaopauloaramuni.github.io/image/engsoft2.svg?raw=true"/>
 </div>
 
-<h1 align="center">Sistema de Aluguel de Carros</h1>
+<h1 align="center">Apex Track Experience — Supercarros & Track Days</h1>
 
 <div align="center">
 
-![Java](https://img.shields.io/badge/Java-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
+![Java](https://img.shields.io/badge/Java_21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
 ![Micronaut](https://img.shields.io/badge/Micronaut-000000?style=for-the-badge&logo=micronaut&logoColor=white)
-![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![React](https://img.shields.io/badge/React_19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow?style=for-the-badge)
 
 **Laboratório de Desenvolvimento de Software — PUC Minas**
 
@@ -22,52 +21,48 @@
 
 ## 📋 Sobre o Projeto
 
-Aplicação web para gestão completa de aluguéis de automóveis, desenvolvida como projeto acadêmico na disciplina de **Laboratório de Desenvolvimento de Software** da PUC Minas.
+Plataforma full-stack para reserva de supercarros em **8 circuitos oficiais FIA** (Interlagos, Nürburgring, Spa-Francorchamps, Le Mans, Monza, Mônaco, Silverstone e Suzuka), evoluída a partir do projeto acadêmico de **Laboratório de Desenvolvimento de Software** da PUC Minas.
 
-O sistema permite que clientes realizem, modifiquem e cancelem pedidos de aluguel, enquanto agentes financeiros (empresas e bancos) avaliam e liberam contratos de crédito. O acesso à plataforma exige cadastro prévio com autenticação e controle de permissões.
+O sistema oferece catálogo dinâmico por circuito e turno (`TrackSlot`), prevenção de overbooking, carteira digital integrada (**ApexPay**) com fidelidade progressiva e cobrança de sinistros/taxas, **E-Pass QR** assinado com HMAC-SHA256 para check-in no paddock, fila assíncrona de reservas e notificações transacionais por e-mail via **Resend API**.
 
 ### Atores do Sistema
 
-| Ator | Permissões |
-|---|---|
-| **Cliente** | Introduzir, modificar, consultar e cancelar pedidos. |
-| **Agente** (Empresa/Banco) | Modificar e avaliar pedidos financeiramente para liberar contratos. |
-
-### Entidades Principais
-
-- **Contratante** — RG, CPF, Nome, Endereço, Profissão, Empregadoras e até 3 rendimentos.
-- **Automóvel** — Matrícula, Ano, Marca, Modelo, Preço por dia e Placa.
-- **Contrato de Crédito** — Associado aos bancos e agentes financeiros após aprovação do pedido.
+| Ator | Role JWT | Permissões |
+|---|---|---|
+| **Piloto (Cliente)** | `ROLE_CLIENTE` | Cadastrar conta e CNH, consultar circuitos/vagas, criar/reagendar/cancelar sessões e gerenciar carteira ApexPay. |
+| **Diretor de Prova (Admin)** | `ROLE_ADMIN` | Operar o Race Control (aprovar/reprovar sessões, check-in E-Pass, sinistros), gerenciar pilotos, saldos e visualizar métricas da fila. |
 
 ---
 
 ## 🏗️ Arquitetura
 
-O sistema segue o padrão arquitetural **Cliente-Servidor via API RESTful**, dividido em duas camadas principais totalmente desacopladas:
+O sistema segue o padrão arquitetural **Cliente-Servidor via API RESTful**, dividido em duas camadas desacopladas:
 
-- **Frontend (SPA)** — Interface rica e interativa construída com React.
-- **Backend (API)** — Lógica de domínio, regras de negócio e persistência ultra-rápida com Micronaut.
+- **Frontend (SPA)** — React, TypeScript, Tailwind CSS, Framer Motion e Vite.
+- **Backend (API)** — Micronaut Framework (Java 21), Micronaut Data JPA, Micronaut Security JWT e envio de e-mails assíncronos via Resend API.
 
 ```text
-┌─────────────────────────────────────────┐
-│              Frontend Web               │
-│        (React / Framer / Tailwind)      │
-└────────────────────┬────────────────────┘
-                     │ HTTP / REST / JSON
-┌────────────────────▼────────────────────┐
-│              Servidor API               │
-│  ┌──────────────┐  ┌──────────────────┐ │
-│  │  Security    │  │   Controllers    │ │
-│  └──────────────┘  └────────┬─────────┘ │
-│                             │           │
-│                ┌────────────▼─────────┐ │
-│                │   Facades / Services │ │
-│                └────────────┬─────────┘ │
-│                             │           │
-│                ┌────────────▼─────────┐ │
-│                │  Micronaut Data (DB) │ │
-│                └──────────────────────┘ │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│                Frontend Web (SPA)            │
+│      React + TypeScript + Tailwind + Vite    │
+└──────────────────────┬───────────────────────┘
+                       │ HTTPS / REST / JWT
+┌──────────────────────▼───────────────────────┐
+│              Servidor API (Micronaut)        │
+│  ┌──────────────┐  ┌───────────────────────┐ │
+│  │ Security JWT │  │      Controllers      │ │
+│  └──────────────┘  └──────────┬────────────┘ │
+│                               │              │
+│                    ┌──────────▼────────────┐ │
+│                    │   Facades / Services  │ │
+│                    │  (ApexPay / Queue /   │ │
+│                    │   QrCodePass / Email) │ │
+│                    └──────────┬────────────┘ │
+│                               │              │
+│                    ┌──────────▼────────────┐ │
+│                    │ Micronaut Data (JPA)  │ │
+│                    └───────────────────────┘ │
+└──────────────────────────────────────────────┘
 ```
 
 ---
@@ -76,71 +71,30 @@ O sistema segue o padrão arquitetural **Cliente-Servidor via API RESTful**, div
 
 ### Backend
 
-- **Java 17+** — Linguagem principal
-- **Micronaut Framework** — Framework de alta performance e baixo consumo de memória
-- **Micronaut Data** — Camada de persistência e repositórios
-- **Micronaut Security (JWT)** — Autenticação e controle de rotas por perfis (`ROLE_CLIENTE`, `ROLE_EMPRESA`, `ROLE_BANCO`)
+- **Java 21** — Linguagem principal
+- **Micronaut Framework** — API REST, injeção de dependências AOT e agendadores (`@Scheduled`)
+- **Micronaut Data JPA + Hibernate** — Persistência relacional (H2 em desenvolvimento / PostgreSQL em produção)
+- **Micronaut Security (JWT)** — Autenticação stateless e RBAC por perfis (`ROLE_CLIENTE`, `ROLE_ADMIN`)
+- **Resend API** — Envio de e-mail transacional para recuperação de senha por código OTP (6 dígitos)
 
 ### Frontend
 
-- **React.js** — Biblioteca de UI
-- **Tailwind CSS** — Estilização de utilitários
-- **Framer Motion** — Animações fluidas de interface
-- **Axios** — Consumo da API REST
+- **React 19 + TypeScript** — Biblioteca de UI com tipagem estrita
+- **Vite** — Bundler e servidor de desenvolvimento
+- **Tailwind CSS & Framer Motion** — Design system escuro automobilístico e animações
+- **Vitest + Testing Library** — Testes unitários e de integração de componentes
 
 ---
 
-## 📦 Entregas por Sprint
+## 📦 Histórico de Modelagem (Sprints Acadêmicas PUC Minas)
+
+> Os diagramas originais documentam a base acadêmica da disciplina antes da evolução para o domínio **Apex Track Experience**:
 
 ### ✅ Lab02S01 — Sprint 1: Modelagem UML
-
-> **Foco:** Levantamento de requisitos e modelagem do sistema.
 
 #### Diagrama de Casos de Uso
 
 ![Diagrama de Casos de Uso](./assets/DiagramaCasosDeUso.png)
-
-#### 👤 Histórias de Usuário (User Stories)
-
-**US01 — Cadastro de Cliente**
-
-> Como um usuário não registrado, quero me cadastrar no sistema fornecendo meus dados de identificação e financeiros, para que eu tenha permissão de utilizar os serviços de aluguel.
-
-**Regra de Negócio:** O cadastro deve armazenar obrigatoriamente RG, CPF, Nome, Endereço, Profissão, entidades empregadoras e os rendimentos auferidos (limitado ao máximo de 3).
-
----
-
-**US02 — Introdução de Pedido**
-
-> Como um cliente cadastrado, quero introduzir um novo pedido de aluguel no sistema, para solicitar a locação de um automóvel.
-
-**Regra de Negócio:** O pedido deve ficar pendente de análise financeira e de disponibilidade pela empresa logo após a introdução.
-
----
-
-**US03 — Gestão Própria de Pedidos (Cliente)**
-
-> Como um cliente, quero consultar, aceitar revisões, modificar ou cancelar meus pedidos de aluguel ativos, para ter controle total sobre as minhas solicitações na plataforma.
-
----
-
-**US04 — Avaliação Financeira (Agente)**
-
-> Como um agente (empresa ou banco), quero analisar os pedidos introduzidos, para emitir um parecer (positivo ou negativo) sobre a execução do contrato.
-
----
-
-**US05 — Modificação de Pedidos (Agente)**
-
-> Como um agente (empresa ou banco), quero poder modificar os pedidos de aluguel (sugerir novas datas), para realizar ajustes de disponibilidade antes da aprovação.
-
----
-
-**US06 — Concessão de Crédito e Propriedade**
-
-> Como um agente bancário, quero associar um contrato de crédito aprovado ao aluguel de um automóvel, para financiar a operação do cliente.
-
----
 
 #### Diagrama de Classes
 
@@ -150,36 +104,17 @@ O sistema segue o padrão arquitetural **Cliente-Servidor via API RESTful**, div
 
 ![Diagrama de Pacotes](./assets/DiagramaDePacotes.png)
 
----
-
-### 🔄 Lab02S02 — Sprint 2: Componentes e CRUD do Cliente
-
-> **Foco:** Diagrama de Componentes e implementação do CRUD do cliente.
-
-#### Diagrama de Componentes
+### 🔄 Lab02S02 — Sprint 2: Componentes e CRUD
 
 ![Diagrama de Componentes](./assets/DiagramaComponentes.png)
 
-#### Implementação do Frontend/Backend
+### 🔄 Lab02S03 — Sprint 3: Implantação e Plataforma Apex Track Experience
 
-- API RESTful desenvolvida com Micronaut.
-- Telas de cadastro dinâmico baseadas em perfis com Hook Form e Zod no React.
+![Diagrama de Implantação](./assets/DiagramaImplnatacao.png)
 
----
-
-### 🔄 Lab02S03 — Sprint 3: Implantação e Protótipo Final
-
-> **Foco:** Diagrama de Implantação e protótipo funcional com criação e visualização de pedidos.
-
-#### Diagrama de Implantação
-
-![Diagrama de Componentes](./assets/DiagramaImplnatacao.png)
-
-#### Protótipo Final
-
-- Motor de Prevenção de Overbooking no Java.
-- Calendário Premium unificado no React exibindo dias disponíveis/bloqueados em tempo real.
-- Fluxo completo de aprovação (Cliente → Empresa → Banco).
+- Motor de prevenção de overbooking por veículo e controle otimista de vagas por turno (`TrackSlot` com `@Version`).
+- Carteira **ApexPay** com histórico de transações, juros automáticos diários em débitos vencidos e desconto progressivo por tier.
+- Painel **Race Control** para aprovação/reprovação de sessões, leitura de **E-Pass QR**, registro de sinistros e monitoramento da fila.
 
 ---
 
@@ -187,14 +122,13 @@ O sistema segue o padrão arquitetural **Cliente-Servidor via API RESTful**, div
 
 ### Pré-requisitos
 
-- Java 21+
-- Node.js 18+ (para o Frontend)
-- Gradle (ou utilize o Gradle Wrapper `./gradlew` / `gradlew.bat` já incluído)
+- **Java 21+**
+- **Node.js 20+** (para o Frontend)
+- Gradle Wrapper (`./gradlew` / `.\gradlew.bat` incluído em `backend/`)
 
 ### Executando o Backend (Micronaut)
 
 ```bash
-# Acesse o diretório do backend
 cd backend
 
 # No Linux/macOS:
@@ -209,48 +143,42 @@ A API estará disponível em `http://localhost:8080`.
 ### Executando o Frontend (React + Vite)
 
 ```bash
-# Acesse o diretório do frontend
 cd frontend
-
-# Instale as dependências (se ainda não instalou)
 npm install
-
-# Inicie o servidor de desenvolvimento
 npm run dev
 ```
 
 A aplicação web estará disponível em `http://localhost:5173`.
 
+### Executando os Testes
+
+```bash
+# Testes Backend (JUnit 5 + Mockito)
+cd backend && .\gradlew.bat test
+
+# Lint, Testes e Build Frontend (ESLint + Vitest + Vite)
+cd frontend && npm run lint && npm test -- --run && npm run build
+```
+
 ---
 
-## 🌐 Deploy em Produção (Gratuito e Profissional)
+## 🌐 Deploy em Produção
 
-O projeto foi preparado com suporte a **Containerização Docker Multi-Stage**, **CORS Dinâmico** e **Rewrite SPA**, permitindo deploy em plataformas modernas e gratuitas:
+O projeto possui suporte a **Containerização Docker Multi-Stage**, **CORS configurável por ambiente** e **Rewrite SPA**:
 
 ### 1. Banco de Dados (PostgreSQL)
-- **Supabase** (Recomendado para portfólio) ou **Neon.tech**:
-  1. Crie um projeto gratuito PostgreSQL.
-  2. Copie a Connection String JDBC (modo `sslmode=require`).
+- **Supabase** ou **Neon.tech** com Connection String JDBC (`sslmode=require`).
 
 ### 2. Backend (Micronaut no Java 21)
-- **Koyeb** ou **Render** (via Dockerfile):
-  1. Conecte o repositório GitHub.
-  2. Configure:
-     - **Root Directory**: `backend`
-     - **Build Type**: `Dockerfile` (já configurado em `backend/Dockerfile` com imagem Alpine ultra-leve ~140MB).
-  3. Adicione as Variáveis de Ambiente:
-     - `JDBC_URL`: URL JDBC do PostgreSQL (ex: `jdbc:postgresql://host:5432/postgres?sslmode=require`).
-     - `DB_USER`: Usuário do banco.
-     - `DB_PASSWORD`: Senha do banco.
-     - `JWT_SECRET`: Chave secreta de 256 bits.
-     - `CORS_ALLOWED_ORIGINS`: URL do seu frontend na Vercel (ex: `https://meu-rentcars.vercel.app`).
+- **Koyeb** ou **Render** (`Root Directory: backend`, `Build Type: Dockerfile`):
+  - `JDBC_URL`: URL JDBC do PostgreSQL
+  - `DB_USER` / `DB_PASSWORD`: credenciais do banco
+  - `JWT_SECRET`: chave secreta HMAC-SHA256 (>= 32 bytes em produção)
+  - `CORS_ALLOWED_ORIGINS`: URL do seu frontend em produção (padrão: `https://apex-experience.vercel.app`; além de `localhost:5173` e `localhost:3000` já liberados)
+  - `RESEND_API_KEY` / `RESEND_FROM_EMAIL`: credenciais da Resend API para recuperação de senha
+  - `ADMIN_DEMO_PASSWORD` / `TEST_PILOT_PASSWORD` *(opcional)*: sobrescrevem as senhas padrão dos usuários seed em produção
 
 ### 3. Frontend (React + Vite)
-- **Vercel**:
-  1. Conecte o repositório GitHub.
-  2. Configure:
-     - **Root Directory**: `frontend`
-     - **Framework Preset**: `Vite`
-  3. Adicione a Variável de Ambiente:
-     - `VITE_API_URL`: URL pública do seu backend (ex: `https://seu-backend.koyeb.app` ou `https://seu-backend.onrender.com`).
-  4. O arquivo `frontend/vercel.json` já está configurado para garantir o roteamento de rotas diretas (SPA).
+- **Vercel** (`Root Directory: frontend`, `Framework Preset: Vite`):
+  - `VITE_API_URL`: URL pública do backend
+  - `frontend/vercel.json` já configurado para roteamento SPA

@@ -18,7 +18,10 @@ public class Pedido {
 
     @ManyToOne
     @JoinColumn(name = "cliente_id", nullable = false)
-    @JsonIgnoreProperties({"senha", "saldoCarteira", "totalDepositadoHistorico"})
+    @JsonIgnoreProperties({
+        "senha", "saldoCarteira", "totalDepositadoHistorico", "rendimentos",
+        "codigoRecuperacao", "codigoRecuperacaoExpiraEm", "tentativasRecuperacao"
+    })
     private Cliente cliente;
 
     // Opcional quando o serviço for apenas Visita ao Box (VISITA_BOX)
@@ -28,7 +31,10 @@ public class Pedido {
 
     @ManyToOne
     @JoinColumn(name = "agente_id")
-    @JsonIgnoreProperties({"senha", "saldoCarteira", "totalDepositadoHistorico"})
+    @JsonIgnoreProperties({
+        "senha", "saldoCarteira", "totalDepositadoHistorico",
+        "codigoRecuperacao", "codigoRecuperacaoExpiraEm", "tentativasRecuperacao"
+    })
     private Agente agenteAvaliador;
 
     @Column(nullable = false)

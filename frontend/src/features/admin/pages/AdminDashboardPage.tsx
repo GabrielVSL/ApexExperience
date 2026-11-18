@@ -54,7 +54,6 @@ interface AdminDashboardData {
     totalPilotosCadastrados: number;
     pilotosInadimplentes: number;
     pilotosEmDia: number;
-    pilotosVipApexBlack: number;
     saldoTotalCustodiadoBRL: number;
     dividaAtivaTotalBRL: number;
   };

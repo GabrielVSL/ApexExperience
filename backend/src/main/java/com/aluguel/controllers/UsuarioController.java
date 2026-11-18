@@ -62,15 +62,21 @@ public class UsuarioController {
 
     private String extrairIpCliente(io.micronaut.http.HttpRequest<?> request) {
         if (request == null) return "127.0.0.1";
+        String remote = "127.0.0.1";
+        try {
+            remote = request.getRemoteAddress().getAddress().getHostAddress();
+        } catch (Exception ignored) {}
+
+        // Aceita X-Forwarded-For apenas quando o peer imediato é local/rede interna (ex: proxy reverso) e com formato IP válido
         String forwarded = request.getHeaders().get("X-Forwarded-For");
         if (forwarded != null && !forwarded.trim().isEmpty()) {
-            return forwarded.split(",")[0].trim();
+            String[] partes = forwarded.split(",");
+            String candidate = partes[partes.length - 1].trim();
+            if (candidate.matches("^[0-9a-fA-F:.]{3,45}$")) {
+                return candidate;
+            }
         }
-        try {
-            return request.getRemoteAddress().getAddress().getHostAddress();
-        } catch (Exception ignored) {
-            return "127.0.0.1";
-        }
+        return remote;
     }
 
     @Post("/recuperar-senha/redefinir")

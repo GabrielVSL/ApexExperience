@@ -76,8 +76,6 @@ public class AdminDashboardFacade {
 
         BigDecimal faturamentoPendente = todosPedidos.stream()
                 .filter(p -> "AGUARDANDO_APROVACAO".equals(p.getStatus())
-                        || "PENDENTE_EMPRESA".equals(p.getStatus())
-                        || "PENDENTE_BANCO".equals(p.getStatus())
                         || "REVISAO_CLIENTE".equals(p.getStatus()))
                 .map(p -> p.getValorFinal() != null ? p.getValorFinal() : (p.getValorTotal() != null ? p.getValorTotal() : BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -114,9 +112,7 @@ public class AdminDashboardFacade {
         long totalSessoesAgendadas = todosPedidos.size();
         long sessoesConfirmadas = todosPedidos.stream().filter(p -> "APROVADO".equals(p.getStatus())).count();
         long sessoesPendentes = todosPedidos.stream()
-                .filter(p -> "AGUARDANDO_APROVACAO".equals(p.getStatus())
-                        || "PENDENTE_EMPRESA".equals(p.getStatus())
-                        || "PENDENTE_BANCO".equals(p.getStatus()))
+                .filter(p -> "AGUARDANDO_APROVACAO".equals(p.getStatus()))
                 .count();
 
         kpis.put("faturamentoTotalBRL", faturamentoTotal);
@@ -173,8 +169,6 @@ public class AdminDashboardFacade {
                             .add(sinistro)
                             .add(taxaRetida));
                 } else if ("AGUARDANDO_APROVACAO".equals(p.getStatus())
-                        || "PENDENTE_EMPRESA".equals(p.getStatus())
-                        || "PENDENTE_BANCO".equals(p.getStatus())
                         || "PENDENTE".equals(p.getStatus())
                         || "REVISAO_CLIENTE".equals(p.getStatus())) {
                     BigDecimal pendAtual = (BigDecimal) ponto.get("faturamentoPendente");
@@ -291,7 +285,6 @@ public class AdminDashboardFacade {
         long totalPilotos = clientes.size();
         long pilotosInadimplentes = clientes.stream().filter(Usuario::isInadimplente).count();
         long pilotosEmDia = totalPilotos - pilotosInadimplentes;
-        long pilotosVipBlack = clientes.stream().filter(u -> "APEX_BLACK".equals(u.getTierFidelidade())).count();
 
         BigDecimal saldoTotalCustodia = clientes.stream()
                 .map(u -> u.getSaldoCarteira() != null ? u.getSaldoCarteira() : BigDecimal.ZERO)
@@ -308,7 +301,6 @@ public class AdminDashboardFacade {
         metricsApexPay.put("totalPilotosCadastrados", totalPilotos);
         metricsApexPay.put("pilotosInadimplentes", pilotosInadimplentes);
         metricsApexPay.put("pilotosEmDia", pilotosEmDia);
-        metricsApexPay.put("pilotosVipApexBlack", pilotosVipBlack);
         metricsApexPay.put("saldoTotalCustodiadoBRL", saldoTotalCustodia);
         metricsApexPay.put("dividaAtivaTotalBRL", dividaAtivaTotal);
         kpis.put("metricasApexPay", metricsApexPay);
@@ -567,12 +559,20 @@ public class AdminDashboardFacade {
 
         // Saldo Inicial ApexPay (opcional para demonstração de recarga)
         if (data.containsKey("saldoInicial") && data.get("saldoInicial") != null) {
-            try {
-                BigDecimal saldo = new BigDecimal(data.get("saldoInicial").toString().trim());
-                if (saldo.compareTo(BigDecimal.ZERO) > 0) {
-                    novoUsuario.creditarSaldo(saldo);
+            String saldoStr = data.get("saldoInicial").toString().trim();
+            if (!saldoStr.isEmpty()) {
+                try {
+                    BigDecimal saldo = new BigDecimal(saldoStr);
+                    if (saldo.compareTo(BigDecimal.ZERO) < 0) {
+                        throw new IllegalArgumentException("O saldo inicial não pode ser negativo.");
+                    }
+                    if (saldo.compareTo(BigDecimal.ZERO) > 0) {
+                        novoUsuario.creditarSaldo(saldo);
+                    }
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Valor de saldo inicial inválido: " + saldoStr);
                 }
-            } catch (Exception ignored) {}
+            }
         }
 
         Usuario salvo = usuarioRepository.save(novoUsuario);
@@ -667,11 +667,17 @@ public class AdminDashboardFacade {
             u.setEndereco(data.get("endereco").toString().trim());
         }
 
+        boolean suspenderConta = false;
         if (data.containsKey("statusConta") && data.get("statusConta") != null) {
             String sc = data.get("statusConta").toString().trim().toUpperCase();
             if (Set.of("ATIVO", "BLOQUEADO_RESERVAS", "SUSPENSO").contains(sc)) {
+                suspenderConta = "SUSPENSO".equals(sc) && !"SUSPENSO".equalsIgnoreCase(u.getStatusConta());
                 u.setStatusConta(sc);
             }
+        }
+
+        if (suspenderConta) {
+            cancelarSessoesPendentesAoSuspender(usuarioId, u);
         }
 
         if (data.containsKey("statusFinanceiro") && data.get("statusFinanceiro") != null) {
@@ -793,5 +799,36 @@ public class AdminDashboardFacade {
             return p.getAutomovel().getCircuito().getNome();
         }
         return "Circuito Internacional";
+    }
+
+    private void cancelarSessoesPendentesAoSuspender(Long usuarioId, Usuario u) {
+        Set<String> statusPendentes = Set.of("AGUARDANDO_APROVACAO", "REVISAO_CLIENTE", "PENDENTE");
+        StreamSupport.stream(pedidoRepository.findAll().spliterator(), false)
+                .filter(p -> p.getCliente() != null && Objects.equals(p.getCliente().getId(), usuarioId))
+                .filter(p -> p.getStatus() != null && statusPendentes.contains(p.getStatus().toUpperCase()))
+                .forEach(p -> {
+                    p.setStatus("CANCELADO");
+                    if (p.getTrackSlot() != null) {
+                        p.getTrackSlot().liberarVaga();
+                        if (trackSlotRepository != null) {
+                            trackSlotRepository.update(p.getTrackSlot());
+                        }
+                    }
+                    String pStatus = p.getPagamentoStatus();
+                    if ("PAGO_CARTEIRA".equalsIgnoreCase(pStatus)
+                            || "FATURA_EM_ABERTO".equalsIgnoreCase(pStatus)
+                            || "DEBITO_ABERTO".equalsIgnoreCase(pStatus)) {
+                        BigDecimal valor = p.getValorFinal() != null ? p.getValorFinal() : p.getValorTotal();
+                        if (valor != null && valor.compareTo(BigDecimal.ZERO) > 0 && apexPayFacade != null) {
+                            apexPayFacade.estornarReserva(u, valor, p.getTrackingCode(), "Estorno automático por suspensão da conta");
+                            p.setPagamentoStatus("ESTORNADO");
+                        } else {
+                            p.setPagamentoStatus("CANCELADO");
+                        }
+                    } else {
+                        p.setPagamentoStatus("CANCELADO");
+                    }
+                    pedidoRepository.update(p);
+                });
     }
 }

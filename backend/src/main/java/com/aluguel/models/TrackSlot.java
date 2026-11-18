@@ -35,6 +35,9 @@ public class TrackSlot {
     @Column(nullable = false)
     private BigDecimal taxaAdicionalTurno = BigDecimal.ZERO;
 
+    @Version
+    private Integer version;
+
     public TrackSlot() {}
 
     public TrackSlot(Circuito circuito, LocalDate data, String turno, Integer vagasTotais) {
@@ -84,4 +87,7 @@ public class TrackSlot {
 
     public BigDecimal getTaxaAdicionalTurno() { return taxaAdicionalTurno; }
     public void setTaxaAdicionalTurno(BigDecimal taxaAdicionalTurno) { this.taxaAdicionalTurno = taxaAdicionalTurno; }
+
+    public Integer getVersion() { return version; }
+    public void setVersion(Integer version) { this.version = version; }
 }

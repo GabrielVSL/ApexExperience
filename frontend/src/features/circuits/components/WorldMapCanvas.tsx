@@ -306,7 +306,7 @@ export default function WorldMapCanvas({
         tileLayer.off('load', handleTileLoad);
       }
     };
-  }, [selectedCircuit, gpsData]);
+  }, [selectedCircuit, gpsData, compact]);
 
   // Controles manuais de zoom
   const handleZoomIn = () => {

@@ -41,11 +41,16 @@ public class ApexPayController {
                 return HttpResponse.badRequest(Map.of("message", "E-mail do usuário não identificado."));
             }
 
-            Object valorObj = payload.get("valor");
+            Object valorObj = payload != null ? payload.get("valor") : null;
             if (valorObj == null) {
                 return HttpResponse.badRequest(Map.of("message", "Campo 'valor' é obrigatório."));
             }
-            BigDecimal valor = new BigDecimal(valorObj.toString());
+            BigDecimal valor;
+            try {
+                valor = new BigDecimal(valorObj.toString().trim());
+            } catch (NumberFormatException e) {
+                return HttpResponse.badRequest(Map.of("message", "Valor numérico inválido para depósito."));
+            }
             String descricao = (String) payload.get("descricao");
 
             TransacaoApexPay transacao = facade.depositar(email, valor, descricao);
@@ -57,7 +62,7 @@ public class ApexPayController {
         } catch (IllegalArgumentException e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            return HttpResponse.serverError(Map.of("message", "Erro ao processar depósito ApexPay: " + e.getMessage()));
+            return HttpResponse.serverError(Map.of("message", "Erro interno ao processar depósito ApexPay."));
         }
     }
 
@@ -107,7 +112,7 @@ public class ApexPayController {
         } catch (IllegalStateException e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            return HttpResponse.serverError(Map.of("message", "Erro ao aplicar juros: " + e.getMessage()));
+            return HttpResponse.serverError(Map.of("message", "Erro interno ao aplicar juros."));
         }
     }
 

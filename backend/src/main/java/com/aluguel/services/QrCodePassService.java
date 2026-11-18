@@ -31,18 +31,20 @@ public class QrCodePassService {
     private static final String ALGORITMO_HMAC = "HmacSHA256";
     private static final DateTimeFormatter ISO_SEC = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    private static final String DEFAULT_DEV_SECRET = "uma-chave-muito-longa-e-segura-para-o-rentcars-lab02-256bits";
     private final PedidoRepository pedidoRepository;
     private final byte[] secretKeyBytes;
 
     @Inject
     public QrCodePassService(
             PedidoRepository pedidoRepository,
-            @Value("${micronaut.security.token.jwt.signatures.secret.generator.secret:uma-chave-muito-longa-e-segura-para-o-rentcars-lab02-256bits}") String secretKey
+            @Value("${micronaut.security.token.jwt.signatures.secret.generator.secret:}") String secretKey
     ) {
         this.pedidoRepository = pedidoRepository;
-        String effective = (secretKey != null && !secretKey.isBlank())
-                ? secretKey
-                : "uma-chave-muito-longa-e-segura-para-o-rentcars-lab02-256bits";
+        String effective = (secretKey != null && !secretKey.isBlank()) ? secretKey.trim() : DEFAULT_DEV_SECRET;
+        if (DEFAULT_DEV_SECRET.equals(effective)) {
+            log.warn("⚠️ JWT_SECRET padrão de desenvolvimento em uso. Configure a variável JWT_SECRET no ambiente de produção.");
+        }
         this.secretKeyBytes = effective.getBytes(StandardCharsets.UTF_8);
     }
 

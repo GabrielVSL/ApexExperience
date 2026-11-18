@@ -24,14 +24,6 @@ public class AutomovelController {
         this.automovelRepository = automovelRepository;
     }
 
-    @Post
-    @Secured("ROLE_ADMIN")
-    public HttpResponse<?> criar(@Body Automovel automovel, Principal principal) {
-        return HttpResponse.badRequest(Map.of(
-                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido criar novos veículos na coleção fixa."
-        ));
-    }
-
     @Get("/minha-frota")
     @Secured("ROLE_ADMIN")
     public HttpResponse<?> listarMinhaFrota(Principal principal) {
@@ -40,22 +32,6 @@ public class AutomovelController {
         } catch (Exception e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         }
-    }
-
-    @Put("/{id}")
-    @Secured("ROLE_ADMIN")
-    public HttpResponse<?> atualizar(@PathVariable Long id, @Body Automovel automovel, Principal principal) {
-        return HttpResponse.badRequest(Map.of(
-                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido alterar as especificações dos supercarros da coleção fixa."
-        ));
-    }
-
-    @Delete("/{id}")
-    @Secured("ROLE_ADMIN")
-    public HttpResponse<?> excluir(@PathVariable Long id, Principal principal) {
-        return HttpResponse.badRequest(Map.of(
-                "message", "A frota Apex Racing é exclusiva e imutável. Não é permitido remover veículos da coleção fixa."
-        ));
     }
 
     @Get("/{id}")

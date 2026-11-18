@@ -39,7 +39,12 @@ public class Automovel {
 
     @ManyToOne
     @JoinColumn(name = "proprietario_id", nullable = false)
-    @JsonIgnoreProperties({"senha", "saldoCarteira", "totalDepositadoHistorico", "statusFinanceiro", "rendimentos", "cpf", "rg", "cnhNumero", "cnhCategoria", "dataNascimento"})
+    @JsonIgnoreProperties({
+        "senha", "saldoCarteira", "totalDepositadoHistorico", "statusFinanceiro",
+        "rendimentos", "cpf", "rg", "cnhNumero", "cnhCategoria", "dataNascimento",
+        "email", "telefone", "endereco", "cnpj", "statusConta",
+        "codigoRecuperacao", "codigoRecuperacaoExpiraEm", "tentativasRecuperacao"
+    })
     private Usuario proprietario;
 
     // --- 🏎️ CAMPOS DO APEX TRACK EXPERIENCE ---

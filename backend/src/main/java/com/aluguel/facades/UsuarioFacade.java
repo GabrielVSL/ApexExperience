@@ -62,11 +62,12 @@ public class UsuarioFacade {
         }
         data.put("role", "CLIENTE");
 
-        String email = (String) data.get("email");
-        if (email == null || email.trim().isEmpty()) {
+        String rawEmail = (String) data.get("email");
+        if (rawEmail == null || rawEmail.trim().isEmpty()) {
             throw new IllegalArgumentException("O e-mail é obrigatório.");
         }
-        if (usuarioRepository.findByEmail(email.trim()).isPresent()) {
+        String email = rawEmail.trim().toLowerCase();
+        if (usuarioRepository.findByEmail(email).isPresent()) {
             throw new IllegalArgumentException("Já existe um usuário cadastrado com este e-mail.");
         }
 
@@ -114,8 +115,14 @@ public class UsuarioFacade {
                     String valStr = item.get("valor").toString().trim();
                     if (!valStr.isEmpty()) {
                         try {
-                            rendimento.setValor(new BigDecimal(valStr));
-                        } catch (Exception ignored) {}
+                            BigDecimal val = new BigDecimal(valStr);
+                            if (val.compareTo(BigDecimal.ZERO) < 0) {
+                                throw new IllegalArgumentException("Valor de rendimento não pode ser negativo.");
+                            }
+                            rendimento.setValor(val);
+                        } catch (NumberFormatException e) {
+                            throw new IllegalArgumentException("Valor de rendimento inválido: " + valStr);
+                        }
                     }
                 }
 
@@ -391,7 +398,7 @@ public class UsuarioFacade {
             throw new IllegalArgumentException("O nome / razão social é obrigatório.");
         }
         u.setNome(nome.trim());
-        u.setEmail(((String) data.get("email")).trim());
+        u.setEmail(((String) data.get("email")).trim().toLowerCase());
         u.setEndereco((String) data.get("endereco"));
         u.setRole("ROLE_" + data.get("role"));
 

@@ -318,4 +318,50 @@ class AdminDashboardFacadeTest {
         assertTrue((Boolean) resp.get("deleted"));
         verify(usuarioRepository, times(1)).delete(piloto);
     }
+
+    @Test
+    @DisplayName("Deve cancelar sessões pendentes, liberar vaga no slot e estornar pagamento ao suspender piloto")
+    void deveCancelarSessoesPendentesLiberarSlotEEstornarAoSuspender() {
+        Cliente piloto = new Cliente();
+        piloto.setId(44L);
+        piloto.setNome("Piloto Suspenso");
+        piloto.setEmail("suspenso@apex.com");
+        piloto.setRole("ROLE_CLIENTE");
+        piloto.setStatusFinanceiro("REGULAR");
+        piloto.setStatusConta("ATIVO");
+
+        Circuito circuito = new Circuito(
+                "interlagos", "Interlagos", "Brasil", "SP",
+                new BigDecimal("4.309"), 15, "1:10.540", 12
+        );
+        TrackSlot slot = new TrackSlot(circuito, LocalDate.now().plusDays(4), "TARDE", 12);
+        slot.ocuparVaga();
+
+        Pedido pedido = new Pedido();
+        pedido.setId(77L);
+        pedido.setTrackingCode("APX-777");
+        pedido.setCliente(piloto);
+        pedido.setTrackSlot(slot);
+        pedido.setStatus("AGUARDANDO_APROVACAO");
+        pedido.setPagamentoStatus("PAGO_CARTEIRA");
+        pedido.setValorTotal(new BigDecimal("2500.00"));
+        pedido.setValorFinal(new BigDecimal("2500.00"));
+
+        when(usuarioRepository.findById(44L)).thenReturn(Optional.of(piloto));
+        when(pedidoRepository.findAll()).thenReturn(List.of(pedido));
+        when(trackSlotRepository.update(any(TrackSlot.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(pedidoRepository.update(any(Pedido.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(usuarioRepository.update(any(Usuario.class))).thenReturn(piloto);
+        when(apexPayFacade.getResumoCarteira("suspenso@apex.com")).thenReturn(Map.of("saldo", new BigDecimal("2500.00")));
+
+        Map<String, Object> atualizado = facade.atualizarUsuarioAdmin(44L, Map.of("statusConta", "SUSPENSO"));
+
+        assertEquals("SUSPENSO", atualizado.get("statusConta"));
+        assertEquals("CANCELADO", pedido.getStatus());
+        assertEquals("ESTORNADO", pedido.getPagamentoStatus());
+        assertEquals(0, slot.getVagasOcupadas());
+        verify(trackSlotRepository).update(slot);
+        verify(apexPayFacade).estornarReserva(eq(piloto), eq(new BigDecimal("2500.00")), eq("APX-777"), contains("suspensão"));
+        verify(pedidoRepository).update(pedido);
+    }
 }

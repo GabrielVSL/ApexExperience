@@ -27,12 +27,6 @@ public class AdminDashboardController {
         return HttpResponse.ok(facade.getMetricasDashboard());
     }
 
-    @Get("/dashboard/publico")
-    @Secured("ROLE_ADMIN")
-    public HttpResponse<?> getDashboardPublico() {
-        return HttpResponse.ok(facade.getMetricasDashboard());
-    }
-
     @Post("/clientes/{id}/aplicar-juros")
     @Secured("ROLE_ADMIN")
     public HttpResponse<?> aplicarJurosCliente(@PathVariable Long id) {
@@ -47,11 +41,16 @@ public class AdminDashboardController {
     @Secured("ROLE_ADMIN")
     public HttpResponse<?> registrarSinistro(@PathVariable Long id, @Body Map<String, Object> payload) {
         try {
-            Object valorObj = payload.get("valor");
+            Object valorObj = payload != null ? payload.get("valor") : null;
             if (valorObj == null) {
                 return HttpResponse.badRequest(Map.of("message", "Campo 'valor' é obrigatório."));
             }
-            BigDecimal valor = new BigDecimal(valorObj.toString());
+            BigDecimal valor;
+            try {
+                valor = new BigDecimal(valorObj.toString().trim());
+            } catch (NumberFormatException e) {
+                return HttpResponse.badRequest(Map.of("message", "Valor numérico inválido para sinistro."));
+            }
             String motivo = payload.get("motivo") != null ? payload.get("motivo").toString() : null;
             return HttpResponse.ok(facade.registrarSinistro(id, valor, motivo));
         } catch (IllegalArgumentException | IllegalStateException e) {
