@@ -12,7 +12,7 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
-  MessageCircle,
+  Mail,
   ShieldAlert,
   ShieldCheck,
   X,
@@ -79,13 +79,13 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberEmail, setRememberEmail] = useState(true);
 
-  // --- 📲 RECURSO WHATSAPP DE RECUPERAÇÃO DE SENHA ---
+  // --- 📧 RECUPERAÇÃO DE SENHA VIA E-MAIL ---
   const [showForgotModal, setShowForgotModal] = useState(false);
-  const [whatsappPhone, setWhatsappPhone] = useState('');
-  const [whatsappSent, setWhatsappSent] = useState(false);
-  const [whatsappOtp, setWhatsappOtp] = useState('');
-  const [whatsappNewPassword, setWhatsappNewPassword] = useState('');
-  const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryOtp, setRecoveryOtp] = useState('');
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
 
   useEffect(() => {
     if (location.pathname === '/cadastro' || searchParams.get('mode') === 'register') {
@@ -244,61 +244,61 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
     }
   };
 
-  // Envio do código WhatsApp
-  const handleSendWhatsAppCode = async (e: React.FormEvent) => {
+  // Envio do código por E-mail
+  const handleSendRecoveryCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = whatsappPhone.replace(/\D/g, '');
-    if (clean.length < 10) {
-      toast.error('Informe um número de WhatsApp válido com DDD.');
+    const cleanEmail = recoveryEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      toast.error('Informe um endereço de e-mail válido.');
       return;
     }
-    setWhatsappLoading(true);
+    setRecoveryLoading(true);
     try {
-      await api.post('/api/usuarios/recuperar-senha-whatsapp/solicitar', {
-        telefone: clean,
+      await api.post('/api/usuarios/recuperar-senha/solicitar', {
+        email: cleanEmail,
       });
-      setWhatsappSent(true);
-      setWhatsappOtp('');
-      toast.success(`Código de verificação enviado para o WhatsApp ${whatsappPhone}! Digite o código recebido no seu celular.`);
+      setRecoverySent(true);
+      setRecoveryOtp('');
+      toast.success(`Código de verificação enviado para ${cleanEmail}! Confira sua caixa de entrada.`);
     } catch (err: any) {
       const msg =
-        err.response?.data?.message || 'Falha ao solicitar código via WhatsApp. Verifique o número informado.';
+        err.response?.data?.message || 'Falha ao solicitar código por e-mail. Verifique o endereço informado.';
       toast.error(msg);
     } finally {
-      setWhatsappLoading(false);
+      setRecoveryLoading(false);
     }
   };
 
   const handleVerifyAndResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPhone = whatsappPhone.replace(/\D/g, '');
-    if (whatsappOtp.trim().length < 4) {
-      toast.error('Digite o código de 6 dígitos recebido no WhatsApp.');
+    const cleanEmail = recoveryEmail.trim().toLowerCase();
+    if (recoveryOtp.trim().length < 4) {
+      toast.error('Digite o código de 6 dígitos recebido no seu e-mail.');
       return;
     }
-    if (whatsappNewPassword.length < 6) {
+    if (recoveryNewPassword.length < 6) {
       toast.error('A nova senha deve ter no mínimo 6 caracteres.');
       return;
     }
-    setWhatsappLoading(true);
+    setRecoveryLoading(true);
     try {
-      await api.post('/api/usuarios/recuperar-senha-whatsapp/redefinir', {
-        telefone: cleanPhone,
-        codigo: whatsappOtp.trim(),
-        novaSenha: whatsappNewPassword,
+      await api.post('/api/usuarios/recuperar-senha/redefinir', {
+        email: cleanEmail,
+        codigo: recoveryOtp.trim(),
+        novaSenha: recoveryNewPassword,
       });
       setShowForgotModal(false);
-      setWhatsappSent(false);
-      setWhatsappPhone('');
-      setWhatsappOtp('');
-      setWhatsappNewPassword('');
+      setRecoverySent(false);
+      setRecoveryEmail('');
+      setRecoveryOtp('');
+      setRecoveryNewPassword('');
       toast.success('Senha atualizada com sucesso! Você já pode entrar com a nova senha.');
     } catch (err: any) {
       const msg =
         err.response?.data?.message || 'Código inválido ou expirado. Tente novamente.';
       toast.error(msg);
     } finally {
-      setWhatsappLoading(false);
+      setRecoveryLoading(false);
     }
   };
 
@@ -515,7 +515,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                         <span>Lembrar e-mail</span>
                       </label>
 
-                      {/* Gatilho de recuperação de senha via WhatsApp */}
+                      {/* Gatilho de recuperação de senha via E-mail */}
                       <button
                         type="button"
                         onClick={() => setShowForgotModal(true)}
@@ -632,7 +632,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
 
                           <div>
                             <label className="block text-[11px] font-medium text-white/80 mb-0.5 pl-1">
-                              WhatsApp (com DDD)
+                              Telefone (com DDD)
                             </label>
                             <input
                               {...registerSignup('telefone', {
@@ -889,24 +889,23 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
             </div>
 
             {/* ========================================================
-                4. MODAL FLUTUANTE DE RECUPERAÇÃO VIA WHATSAPP
+                4. MODAL FLUTUANTE DE RECUPERAÇÃO VIA E-MAIL
                ======================================================== */}
-            <AnimatePresence>
-              {showForgotModal && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute inset-0 z-30 bg-[#080A10]/95 backdrop-blur-2xl p-6 flex flex-col justify-between"
-                >
+            {showForgotModal && (
+              <motion.div
+                key="forgot-password-modal"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute inset-0 z-30 bg-[#080A10]/95 backdrop-blur-2xl p-6 flex flex-col justify-between"
+              >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-[#25D366]/20 border border-[#25D366]/40 flex items-center justify-center text-[#25D366]">
-                        <MessageCircle size={15} />
+                      <div className="w-7 h-7 rounded-full bg-[#FF1717]/15 border border-[#FF1717]/40 flex items-center justify-center text-[#FF1717]">
+                        <Mail size={15} />
                       </div>
-                      <span className="text-xs font-mono uppercase tracking-widest text-[#25D366] font-bold">
-                        WhatsApp OTP
+                      <span className="text-xs font-mono uppercase tracking-widest text-white/90 font-bold">
+                        E-mail OTP
                       </span>
                     </div>
                     <button
@@ -918,26 +917,26 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                     </button>
                   </div>
 
-                  {!whatsappSent ? (
-                    <form onSubmit={handleSendWhatsAppCode} className="space-y-4 my-auto">
+                  {!recoverySent ? (
+                    <form onSubmit={handleSendRecoveryCode} className="space-y-4 my-auto">
                       <div className="text-center">
                         <h2 className="text-lg font-bold uppercase tracking-wider text-white">
                           Recuperar Acesso
                         </h2>
                         <p className="text-xs text-white/60 mt-1">
-                          Enviaremos um código de segurança de 6 dígitos instantaneamente para seu WhatsApp.
+                          Enviaremos um código de segurança de 6 dígitos para o seu e-mail cadastrado.
                         </p>
                       </div>
 
                       <div>
                         <label className="block text-[11px] font-medium text-white/80 mb-1 pl-1">
-                          Número do WhatsApp
+                          E-mail cadastrado
                         </label>
                         <input
-                          type="tel"
-                          placeholder="(11) 98765-4321"
-                          value={whatsappPhone}
-                          onChange={(e) => setWhatsappPhone(maskPhone(e.target.value))}
+                          type="email"
+                          placeholder="piloto@apex.com"
+                          value={recoveryEmail}
+                          onChange={(e) => setRecoveryEmail(e.target.value)}
                           className={pillInputClass}
                           autoFocus
                         />
@@ -945,15 +944,15 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
 
                       <button
                         type="submit"
-                        disabled={whatsappLoading}
-                        className="w-full rounded-full py-3 bg-[#25D366] hover:bg-[#1EBE5D] text-black font-semibold text-xs tracking-wide transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                        disabled={recoveryLoading}
+                        className="w-full rounded-full py-3 bg-[#FF1717] hover:bg-[#E10600] text-white font-semibold text-xs tracking-wide transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        {whatsappLoading ? (
+                        {recoveryLoading ? (
                           <Loader2 className="animate-spin" size={15} />
                         ) : (
                           <>
-                            <MessageCircle size={15} />
-                            <span>Enviar Código via WhatsApp</span>
+                            <Mail size={15} />
+                            <span>Enviar Código por E-mail</span>
                           </>
                         )}
                       </button>
@@ -965,7 +964,7 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                           Validar Código
                         </h2>
                         <p className="text-[11px] text-white/60 mt-0.5">
-                          Enviado para <strong className="text-white">{whatsappPhone}</strong>
+                          Enviado para <strong className="text-white">{recoveryEmail}</strong>
                         </p>
                       </div>
 
@@ -977,8 +976,8 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                           type="text"
                           maxLength={6}
                           placeholder="Ex: 849201"
-                          value={whatsappOtp}
-                          onChange={(e) => setWhatsappOtp(e.target.value.replace(/\D/g, ''))}
+                          value={recoveryOtp}
+                          onChange={(e) => setRecoveryOtp(e.target.value.replace(/\D/g, ''))}
                           className={`${pillInputClass} text-center tracking-[0.3em] font-mono text-base font-bold`}
                           autoFocus
                         />
@@ -991,18 +990,18 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                         <input
                           type="password"
                           placeholder="Mín. 6 caracteres"
-                          value={whatsappNewPassword}
-                          onChange={(e) => setWhatsappNewPassword(e.target.value)}
+                          value={recoveryNewPassword}
+                          onChange={(e) => setRecoveryNewPassword(e.target.value)}
                           className={pillInputClass}
                         />
                       </div>
 
                       <button
                         type="submit"
-                        disabled={whatsappLoading}
+                        disabled={recoveryLoading}
                         className="w-full rounded-full py-3 bg-[#FF1717] hover:bg-[#E10600] text-white font-semibold text-xs tracking-wide transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer mt-1"
                       >
-                        {whatsappLoading ? (
+                        {recoveryLoading ? (
                           <Loader2 className="animate-spin" size={15} />
                         ) : (
                           <>
@@ -1015,22 +1014,21 @@ export default function AuthPage({ initialMode }: AuthPageProps) {
                       <div className="text-center pt-1">
                         <button
                           type="button"
-                          onClick={() => setWhatsappSent(false)}
+                          onClick={() => setRecoverySent(false)}
                           className="text-[11px] text-white/50 hover:text-white transition-colors cursor-pointer"
                         >
-                          Reenviar para outro número
+                          Reenviar para outro e-mail
                         </button>
                       </div>
                     </form>
                   )}
 
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-white/40">
-                    <ShieldCheck size={12} className="text-[#25D366]" />
+                    <ShieldCheck size={12} className="text-[#FF1717]" />
                     <span>Autenticação Criptografada Apex Paddock</span>
                   </div>
                 </motion.div>
               )}
-            </AnimatePresence>
           </div>
         </main>
 

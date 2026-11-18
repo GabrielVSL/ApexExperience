@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   X,
   User,
@@ -15,7 +15,6 @@ import {
   Mail,
   MapPin,
   CheckCircle2,
-  MessageCircle,
   Lock,
 } from 'lucide-react';
 import { api } from '@/services/api';
@@ -179,48 +178,46 @@ export default function UserEditDrawer({
     }
   };
 
-  const handleSendWhatsAppReset = async () => {
-    if (!telefone) {
-      toast.error('O piloto não possui telefone de WhatsApp cadastrado.');
+  const handleSendEmailReset = async () => {
+    if (!user?.email) {
+      toast.error('O piloto não possui e-mail cadastrado.');
       return;
     }
     try {
-      const res = await api.post('/api/usuarios/recuperar-senha-whatsapp/solicitar', {
-        telefone,
+      const res = await api.post('/api/usuarios/recuperar-senha/solicitar', {
+        email: user.email,
       });
       toast.success(
-        res.data?.message || 'Instruções de redefinição enviadas para o WhatsApp do piloto!'
+        res.data?.message || 'Código de redefinição enviado para o e-mail do piloto!'
       );
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Erro ao enviar WhatsApp.');
+      toast.error(err.response?.data?.message || 'Erro ao enviar e-mail de recuperação.');
     }
   };
 
   const statusMeta = STATUS_CONTA_LABELS[statusConta] || STATUS_CONTA_LABELS.ATIVO;
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[150] flex justify-end overflow-hidden font-sans">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
-          />
+  if (!isOpen) return null;
 
-          <motion.aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Editar ficha do piloto"
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 320 }}
-            className="relative z-10 w-full max-w-[540px] h-full sm:p-3 flex flex-col"
-          >
+  return (
+    <div className="fixed inset-0 z-[150] flex justify-end overflow-hidden font-sans">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.18 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
+      />
+
+      <motion.aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Editar ficha do piloto"
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 w-full max-w-[540px] h-full sm:p-3 flex flex-col"
+      >
             <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
               {/* Cabeçalho */}
               <div className="px-6 pt-6 pb-5 space-y-5 border-b border-white/[0.06] shrink-0">
@@ -337,7 +334,7 @@ export default function UserEditDrawer({
 
                         <div>
                           <label className="block text-xs font-medium text-white/60 mb-1.5 px-1">
-                            Telefone / WhatsApp (com DDD)
+                            Telefone (com DDD)
                           </label>
                           <div className="relative">
                             <input
@@ -353,7 +350,7 @@ export default function UserEditDrawer({
                             />
                           </div>
                           <p className="text-[11px] text-white/45 mt-1.5 px-1">
-                            Utilizado para código de verificação e avisos de reserva no WhatsApp.
+                            Utilizado para contato direto com o piloto em caso de emergência ou suporte.
                           </p>
                         </div>
 
@@ -577,19 +574,19 @@ export default function UserEditDrawer({
 
                             <div className="p-4 rounded-2xl bg-[#121622] space-y-2.5">
                               <h4 className="text-xs font-medium text-white flex items-center gap-2">
-                                <MessageCircle size={14} className="text-emerald-400" />
-                                <span>Enviar código de recuperação via WhatsApp</span>
+                                <Mail size={14} className="text-emerald-400" />
+                                <span>Enviar código de recuperação por E-mail</span>
                               </h4>
                               <p className="text-xs text-white/55 leading-relaxed">
-                                Envia um código de verificação para o número cadastrado (
-                                {telefone || 'sem telefone cadastrado'}).
+                                Envia um código de verificação para o e-mail cadastrado (
+                                {user?.email || 'sem e-mail cadastrado'}).
                               </p>
                               <button
                                 type="button"
-                                onClick={handleSendWhatsAppReset}
+                                onClick={handleSendEmailReset}
                                 className="px-4 py-2 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-medium cursor-pointer transition-colors"
                               >
-                                Enviar código no WhatsApp
+                                Enviar código por E-mail
                               </button>
                             </div>
 
@@ -641,7 +638,5 @@ export default function UserEditDrawer({
             </div>
           </motion.aside>
         </div>
-      )}
-    </AnimatePresence>
   );
 }

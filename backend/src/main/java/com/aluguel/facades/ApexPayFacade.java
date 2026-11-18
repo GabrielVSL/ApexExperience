@@ -18,15 +18,15 @@ public class ApexPayFacade {
 
     private final UsuarioRepository usuarioRepository;
     private final TransacaoApexPayRepository transacaoRepository;
-    private final com.aluguel.services.WhatsAppService whatsAppService;
+    private final com.aluguel.services.EmailService emailService;
 
     @jakarta.inject.Inject
     public ApexPayFacade(UsuarioRepository usuarioRepository,
                          TransacaoApexPayRepository transacaoRepository,
-                         @io.micronaut.core.annotation.Nullable com.aluguel.services.WhatsAppService whatsAppService) {
+                         @io.micronaut.core.annotation.Nullable com.aluguel.services.EmailService emailService) {
         this.usuarioRepository = usuarioRepository;
         this.transacaoRepository = transacaoRepository;
-        this.whatsAppService = whatsAppService;
+        this.emailService = emailService;
     }
 
     public ApexPayFacade(UsuarioRepository usuarioRepository,
@@ -54,9 +54,9 @@ public class ApexPayFacade {
         );
         TransacaoApexPay salva = transacaoRepository.save(transacao);
 
-        // Notificação de crédito na carteira via WhatsApp
-        if (whatsAppService != null && usuario.getTelefone() != null && !usuario.getTelefone().isBlank()) {
-            whatsAppService.enviarConfirmacaoDepositoAsync(usuario.getTelefone(), usuario.getNome(), valor, usuario.getSaldoCarteira());
+        // Notificação de crédito na carteira por e-mail
+        if (emailService != null && usuario.getEmail() != null && !usuario.getEmail().isBlank()) {
+            emailService.enviarConfirmacaoDepositoAsync(usuario.getEmail(), usuario.getNome(), valor, usuario.getSaldoCarteira());
         }
 
         return salva;

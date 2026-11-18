@@ -3,7 +3,7 @@ package com.aluguel.facades;
 import com.aluguel.models.*;
 import com.aluguel.queue.ReservaQueueEngine;
 import com.aluguel.repositories.*;
-import com.aluguel.services.WhatsAppService;
+import com.aluguel.services.EmailService;
 import com.aluguel.utils.CnhValidator;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Inject;
@@ -31,7 +31,7 @@ public class AdminDashboardFacade {
     private final ReservaQueueEngine queueEngine;
     private final ApexPayFacade apexPayFacade;
     private final ClienteRepository clienteRepository;
-    private final WhatsAppService whatsAppService;
+    private final EmailService emailService;
 
     @Inject
     public AdminDashboardFacade(PedidoRepository pedidoRepository,
@@ -41,7 +41,7 @@ public class AdminDashboardFacade {
                                 ReservaQueueEngine queueEngine,
                                 ApexPayFacade apexPayFacade,
                                 @Nullable ClienteRepository clienteRepository,
-                                @Nullable WhatsAppService whatsAppService) {
+                                @Nullable EmailService emailService) {
         this.pedidoRepository = pedidoRepository;
         this.trackSlotRepository = trackSlotRepository;
         this.usuarioRepository = usuarioRepository;
@@ -49,7 +49,7 @@ public class AdminDashboardFacade {
         this.queueEngine = queueEngine;
         this.apexPayFacade = apexPayFacade;
         this.clienteRepository = clienteRepository;
-        this.whatsAppService = whatsAppService;
+        this.emailService = emailService;
     }
 
     public AdminDashboardFacade(PedidoRepository pedidoRepository,
@@ -589,9 +589,9 @@ public class AdminDashboardFacade {
             transacaoRepository.save(tx);
         }
 
-        // Dispara mensagem de boas-vindas no WhatsApp se informado telefone
-        if (whatsAppService != null && salvo.getTelefone() != null && !salvo.getTelefone().isBlank()) {
-            whatsAppService.enviarBoasVindasAsync(salvo.getTelefone(), salvo.getNome());
+        // Dispara mensagem de boas-vindas por e-mail
+        if (emailService != null && salvo.getEmail() != null && !salvo.getEmail().isBlank()) {
+            emailService.enviarBoasVindasAsync(salvo.getEmail(), salvo.getNome());
         }
 
         return converterUsuarioResumo(salvo);

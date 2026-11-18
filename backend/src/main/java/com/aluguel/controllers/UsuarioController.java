@@ -2,12 +2,18 @@ package com.aluguel.controllers;
 
 import com.aluguel.facades.UsuarioFacade;
 import com.aluguel.models.Usuario;
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.annotation.*;
 import io.micronaut.security.annotation.Secured;
+import io.micronaut.security.authentication.Authentication;
 import io.micronaut.security.rules.SecurityRule;
+import io.micronaut.security.token.generator.AccessRefreshTokenGenerator;
+import jakarta.inject.Inject;
 
 import java.security.Principal;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Controller("/api/usuarios")
@@ -15,9 +21,16 @@ import java.util.Map;
 public class UsuarioController {
 
     private final UsuarioFacade facade;
+    private final AccessRefreshTokenGenerator tokenGenerator;
+
+    @Inject
+    public UsuarioController(UsuarioFacade facade, @Nullable AccessRefreshTokenGenerator tokenGenerator) {
+        this.facade = facade;
+        this.tokenGenerator = tokenGenerator;
+    }
 
     public UsuarioController(UsuarioFacade facade) {
-        this.facade = facade;
+        this(facade, null);
     }
 
     @Post("/registrar")
@@ -32,18 +45,18 @@ public class UsuarioController {
         }
     }
 
-    @Post("/recuperar-senha-whatsapp/solicitar")
+    @Post("/recuperar-senha/solicitar")
     @Secured(SecurityRule.IS_ANONYMOUS)
-    public HttpResponse<?> solicitarRecuperacaoWhatsApp(@Body Map<String, String> payload, io.micronaut.http.HttpRequest<?> request) {
+    public HttpResponse<?> solicitarRecuperacaoEmail(@Body Map<String, String> payload, io.micronaut.http.HttpRequest<?> request) {
         try {
-            String telefone = payload != null ? payload.get("telefone") : null;
+            String email = payload != null ? payload.get("email") : null;
             String clientIp = extrairIpCliente(request);
-            Map<String, Object> resp = facade.solicitarRecuperacaoSenhaWhatsApp(telefone, clientIp);
+            Map<String, Object> resp = facade.solicitarRecuperacaoSenhaEmail(email, clientIp);
             return HttpResponse.ok(resp);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            return HttpResponse.badRequest(Map.of("message", "Falha ao solicitar código via WhatsApp."));
+            return HttpResponse.badRequest(Map.of("message", "Falha ao solicitar código por e-mail."));
         }
     }
 
@@ -60,19 +73,19 @@ public class UsuarioController {
         }
     }
 
-    @Post("/recuperar-senha-whatsapp/redefinir")
+    @Post("/recuperar-senha/redefinir")
     @Secured(SecurityRule.IS_ANONYMOUS)
-    public HttpResponse<?> redefinirSenhaWhatsApp(@Body Map<String, String> payload) {
+    public HttpResponse<?> redefinirSenhaEmail(@Body Map<String, String> payload) {
         try {
-            String telefone = payload != null ? payload.get("telefone") : null;
+            String email = payload != null ? payload.get("email") : null;
             String codigo = payload != null ? payload.get("codigo") : null;
             String novaSenha = payload != null ? payload.get("novaSenha") : null;
-            Map<String, Object> resp = facade.redefinirSenhaWhatsApp(telefone, codigo, novaSenha);
+            Map<String, Object> resp = facade.redefinirSenhaEmail(email, codigo, novaSenha);
             return HttpResponse.ok(resp);
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         } catch (Exception e) {
-            return HttpResponse.badRequest(Map.of("message", "Falha ao redefinir senha via WhatsApp."));
+            return HttpResponse.badRequest(Map.of("message", "Falha ao redefinir senha por e-mail."));
         }
     }
 
@@ -90,7 +103,14 @@ public class UsuarioController {
     @Secured(SecurityRule.IS_AUTHENTICATED)
     public HttpResponse<?> atualizarPerfil(@Body Map<String, Object> payload, Principal principal) {
         try {
-            return HttpResponse.ok(facade.atualizarPerfil(principal.getName(), payload));
+            Map<String, Object> perfilAtualizado = new HashMap<>(facade.atualizarPerfil(principal.getName(), payload));
+            String novoEmail = perfilAtualizado.get("email") != null ? perfilAtualizado.get("email").toString() : principal.getName();
+            if (tokenGenerator != null && !novoEmail.equalsIgnoreCase(principal.getName())) {
+                String role = perfilAtualizado.get("role") != null ? perfilAtualizado.get("role").toString() : "ROLE_CLIENTE";
+                tokenGenerator.generate(Authentication.build(novoEmail, List.of(role)))
+                        .ifPresent(tokens -> perfilAtualizado.put("accessToken", tokens.getAccessToken()));
+            }
+            return HttpResponse.ok(perfilAtualizado);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return HttpResponse.badRequest(Map.of("message", e.getMessage()));
         } catch (Exception e) {
@@ -104,7 +124,7 @@ public class UsuarioController {
         try {
             String senhaAtual = payload != null ? payload.get("senhaAtual") : null;
             String novaSenha = payload != null ? payload.get("novaSenha") : null;
-            String codigo = payload != null ? payload.get("codigoWhatsApp") : null;
+            String codigo = payload != null ? payload.getOrDefault("codigoEmail", payload.get("codigo")) : null;
             Map<String, Object> resp = facade.alterarSenhaAutenticado(principal.getName(), senhaAtual, novaSenha, codigo);
             return HttpResponse.ok(resp);
         } catch (IllegalArgumentException | IllegalStateException e) {

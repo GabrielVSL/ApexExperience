@@ -2,7 +2,7 @@ package com.aluguel.facades;
 
 import com.aluguel.models.*;
 import com.aluguel.repositories.*;
-import com.aluguel.services.WhatsAppService;
+import com.aluguel.services.EmailService;
 import com.aluguel.utils.CnhValidator;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -28,26 +28,26 @@ public class UsuarioFacade {
     private final ClienteRepository clienteRepository;
     private final AgenteRepository agenteRepository;
     private final ClienteFacade clienteFacade;
-    private final WhatsAppService whatsAppService;
+    private final EmailService emailService;
 
     @Inject
     public UsuarioFacade(UsuarioRepository usuarioRepository,
                          ClienteRepository clienteRepository,
                          AgenteRepository agenteRepository,
                          ClienteFacade clienteFacade,
-                         WhatsAppService whatsAppService) {
+                         EmailService emailService) {
         this.usuarioRepository = usuarioRepository;
         this.clienteRepository = clienteRepository;
         this.agenteRepository = agenteRepository;
         this.clienteFacade = clienteFacade;
-        this.whatsAppService = whatsAppService;
+        this.emailService = emailService;
     }
 
     public UsuarioFacade(UsuarioRepository usuarioRepository,
                          ClienteRepository clienteRepository,
                          AgenteRepository agenteRepository,
                          ClienteFacade clienteFacade) {
-        this(usuarioRepository, clienteRepository, agenteRepository, clienteFacade, new WhatsAppService("http://localhost:8085"));
+        this(usuarioRepository, clienteRepository, agenteRepository, clienteFacade, new EmailService("", "Apex Track Experience <onboarding@resend.dev>"));
     }
 
     @Transactional
@@ -131,9 +131,9 @@ public class UsuarioFacade {
         clienteFacade.validarRegrasDeNegocio(c);
         Cliente salvo = clienteRepository.save(c);
 
-        // Boas-Vindas automáticas no WhatsApp para o novo piloto cadastrado
-        if (salvo.getTelefone() != null && !salvo.getTelefone().isBlank()) {
-            whatsAppService.enviarBoasVindasAsync(salvo.getTelefone(), salvo.getNome());
+        // Boas-Vindas automáticas por e-mail para o novo piloto cadastrado
+        if (salvo.getEmail() != null && !salvo.getEmail().isBlank()) {
+            emailService.enviarBoasVindasAsync(salvo.getEmail(), salvo.getNome());
         }
 
         return salvo;
@@ -185,6 +185,18 @@ public class UsuarioFacade {
                     u.setNome(nome);
                 }
             }
+            if (payload.containsKey("email") && payload.get("email") != null) {
+                String novoEmail = payload.get("email").toString().trim().toLowerCase();
+                if (!novoEmail.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+                    throw new IllegalArgumentException("Informe um endereço de e-mail válido.");
+                }
+                if (!novoEmail.equalsIgnoreCase(u.getEmail())) {
+                    if (usuarioRepository.findByEmail(novoEmail).isPresent()) {
+                        throw new IllegalArgumentException("Já existe outra conta cadastrada com este e-mail.");
+                    }
+                    u.setEmail(novoEmail);
+                }
+            }
             if (payload.containsKey("telefone") && payload.get("telefone") != null) {
                 u.setTelefone(payload.get("telefone").toString().replaceAll("\\D", ""));
             }
@@ -194,11 +206,11 @@ public class UsuarioFacade {
         }
 
         usuarioRepository.update(u);
-        return buscarPerfil(email);
+        return buscarPerfil(u.getEmail());
     }
 
     @Transactional
-    public Map<String, Object> alterarSenhaAutenticado(String email, String senhaAtual, String novaSenha, String codigoWhatsApp) {
+    public Map<String, Object> alterarSenhaAutenticado(String email, String senhaAtual, String novaSenha, String codigoEmail) {
         Usuario u = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("Usuário não encontrado."));
 
@@ -217,21 +229,21 @@ public class UsuarioFacade {
             } else {
                 throw new IllegalArgumentException("Senha atual incorreta. Digite sua senha atual correta para autorizar a alteração.");
             }
-        } else if (codigoWhatsApp != null && !codigoWhatsApp.isBlank()) {
+        } else if (codigoEmail != null && !codigoEmail.isBlank()) {
             if (u.getCodigoRecuperacao() != null &&
-                    u.getCodigoRecuperacao().equals(codigoWhatsApp.trim()) &&
+                    u.getCodigoRecuperacao().equals(codigoEmail.trim()) &&
                     u.getCodigoRecuperacaoExpiraEm() != null &&
                     LocalDateTime.now().isBefore(u.getCodigoRecuperacaoExpiraEm())) {
                 verificado = true;
                 u.setCodigoRecuperacao(null);
                 u.setCodigoRecuperacaoExpiraEm(null);
             } else {
-                throw new IllegalArgumentException("Código de verificação do WhatsApp inválido ou expirado.");
+                throw new IllegalArgumentException("Código de verificação por e-mail inválido ou expirado.");
             }
         }
 
         if (!verificado) {
-            throw new IllegalArgumentException("Para alterar a senha com segurança, confirme sua Senha Atual ou valide com o Código do WhatsApp.");
+            throw new IllegalArgumentException("Para alterar a senha com segurança, confirme sua Senha Atual ou valide com o Código enviado por E-mail.");
         }
 
         u.setSenha(BCrypt.hashpw(novaSenha.trim(), BCrypt.gensalt()));
@@ -265,27 +277,23 @@ public class UsuarioFacade {
     }
 
     @Transactional
-    public Map<String, Object> solicitarRecuperacaoSenhaWhatsApp(String telefone) {
-        return solicitarRecuperacaoSenhaWhatsApp(telefone, null);
+    public Map<String, Object> solicitarRecuperacaoSenhaEmail(String email) {
+        return solicitarRecuperacaoSenhaEmail(email, null);
     }
 
     @Transactional
-    public Map<String, Object> solicitarRecuperacaoSenhaWhatsApp(String telefone, String clientIp) {
-        if (telefone == null || telefone.trim().isEmpty()) {
-            throw new IllegalArgumentException("O número de WhatsApp é obrigatório.");
+    public Map<String, Object> solicitarRecuperacaoSenhaEmail(String email, String clientIp) {
+        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
+            throw new IllegalArgumentException("Informe um e-mail válido para recuperação.");
         }
-        String cleanPhone = telefone.replaceAll("\\D", "");
-        if (cleanPhone.length() < 10) {
-            throw new IllegalArgumentException("Número de WhatsApp inválido. Digite DDD + número (ex: 11987654321).");
-        }
+        String cleanEmail = email.trim().toLowerCase();
 
-        // Validação de cota e proteção anti-spam prévia (IP, Teto por Telefone e Teto Global)
-        whatsAppService.validarLimitesAntiSpam(cleanPhone, clientIp);
+        // Validação de cota e proteção anti-spam prévia (IP, Teto por E-mail e Teto Global)
+        emailService.validarLimitesAntiSpam(cleanEmail, clientIp);
 
-        // Busca estrita pelo piloto titular do telefone informado (Sem falhas de fallback ou sobrescrita)
-        Usuario usuario = usuarioRepository.findByTelefone(cleanPhone)
+        Usuario usuario = usuarioRepository.findByEmail(cleanEmail)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Nenhum piloto encontrado com o WhatsApp " + telefone + ". Verifique se o número foi cadastrado com o DDD."
+                        "Nenhum piloto encontrado com o e-mail " + email.trim() + "."
                 ));
 
         // 🔒 PROTEÇÃO DE SEGURANÇA: A senha de administrador é fixa para demonstração e não pode ser redefinida
@@ -296,7 +304,7 @@ public class UsuarioFacade {
         // Rate Limiting: Bloqueia novo envio em menos de 60 segundos
         if (usuario.getCodigoRecuperacaoExpiraEm() != null &&
                 usuario.getCodigoRecuperacaoExpiraEm().isAfter(LocalDateTime.now().plusMinutes(9))) {
-            throw new IllegalArgumentException("Aguarde 60 segundos antes de solicitar um novo código no WhatsApp.");
+            throw new IllegalArgumentException("Aguarde 60 segundos antes de solicitar um novo código por e-mail.");
         }
 
         // Gera código de segurança numérico de 6 dígitos
@@ -306,28 +314,28 @@ public class UsuarioFacade {
         usuario.setTentativasRecuperacao(0);
         usuarioRepository.update(usuario);
 
-        // Disparo real via WhatsApp (Meta Cloud API ou Gateway local)
-        boolean enviado = whatsAppService.enviarCodigo(cleanPhone, codigo);
+        // Disparo real via Resend E-mail
+        boolean enviado = emailService.enviarCodigo(usuario.getEmail(), usuario.getNome(), codigo);
         if (!enviado) {
-            throw new IllegalStateException("Não foi possível entregar a mensagem no WhatsApp. Verifique se o número está ativo ou se o gateway está conectado.");
+            throw new IllegalStateException("Não foi possível entregar o e-mail com o código. Verifique se o serviço Resend está configurado (RESEND_API_KEY).");
         }
 
         // Registra o disparo na cota anti-spam
-        whatsAppService.registrarEnvio(cleanPhone, clientIp);
+        emailService.registrarEnvio(cleanEmail, clientIp);
 
         // Resposta 100% segura: O código OTP NUNCA é devolvido na API
         return Map.of(
                 "success", true,
-                "message", "Código de segurança enviado com sucesso para o seu WhatsApp!"
+                "message", "Código de segurança enviado com sucesso para o seu e-mail!"
         );
     }
 
     @Transactional
-    public Map<String, Object> redefinirSenhaWhatsApp(String telefone, String codigo, String novaSenha) {
-        if (telefone == null || telefone.trim().isEmpty()) {
-            throw new IllegalArgumentException("O número de telefone é obrigatório.");
+    public Map<String, Object> redefinirSenhaEmail(String email, String codigo, String novaSenha) {
+        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
+            throw new IllegalArgumentException("O e-mail é obrigatório.");
         }
-        String cleanPhone = telefone.replaceAll("\\D", "");
+        String cleanEmail = email.trim().toLowerCase();
         if (codigo == null || codigo.trim().isEmpty()) {
             throw new IllegalArgumentException("O código de verificação é obrigatório.");
         }
@@ -335,8 +343,8 @@ public class UsuarioFacade {
             throw new IllegalArgumentException("A nova senha deve ter no mínimo 6 caracteres.");
         }
 
-        Usuario usuario = usuarioRepository.findByTelefone(cleanPhone)
-                .orElseThrow(() -> new IllegalArgumentException("Nenhum piloto encontrado com este WhatsApp."));
+        Usuario usuario = usuarioRepository.findByEmail(cleanEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Nenhum piloto encontrado com este e-mail."));
 
         // 🔒 PROTEÇÃO DE SEGURANÇA: A senha de administrador é fixa para demonstração e não pode ser redefinida
         if ("ROLE_ADMIN".equalsIgnoreCase(usuario.getRole()) || "admin@apex.com".equalsIgnoreCase(usuario.getEmail())) {
@@ -344,7 +352,7 @@ public class UsuarioFacade {
         }
 
         if (usuario.getCodigoRecuperacaoExpiraEm() == null || usuario.getCodigoRecuperacaoExpiraEm().isBefore(LocalDateTime.now())) {
-            throw new IllegalArgumentException("O código de verificação expirou. Solicite um novo código via WhatsApp.");
+            throw new IllegalArgumentException("O código de verificação expirou. Solicite um novo código por e-mail.");
         }
 
         // Bloqueio de Força Bruta: Máximo de 3 tentativas por código gerado
@@ -354,7 +362,7 @@ public class UsuarioFacade {
             usuario.setCodigoRecuperacaoExpiraEm(null);
             usuario.setTentativasRecuperacao(0);
             usuarioRepository.update(usuario);
-            throw new IllegalArgumentException("Limite de 3 tentativas excedido. Por segurança, solicite um novo código no WhatsApp.");
+            throw new IllegalArgumentException("Limite de 3 tentativas excedido. Por segurança, solicite um novo código por e-mail.");
         }
 
         if (usuario.getCodigoRecuperacao() == null || !usuario.getCodigoRecuperacao().equals(codigo.trim())) {

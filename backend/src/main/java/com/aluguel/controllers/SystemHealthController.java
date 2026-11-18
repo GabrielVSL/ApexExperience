@@ -27,8 +27,8 @@ public class SystemHealthController {
     private final TrackSlotRepository trackSlotRepository;
     private final PedidoRepository pedidoRepository;
     private final ReservaQueueEngine queueEngine;
-    private final String whatsappServiceUrl;
-    private final boolean cloudApiConfigured;
+    private final boolean resendConfigured;
+    private final String resendFrom;
 
     public SystemHealthController(
             CircuitoRepository circuitoRepository,
@@ -36,18 +36,18 @@ public class SystemHealthController {
             TrackSlotRepository trackSlotRepository,
             PedidoRepository pedidoRepository,
             ReservaQueueEngine queueEngine,
-            @Value("${whatsapp.service.url:http://localhost:8085}") String whatsappServiceUrl,
-            @Nullable @Value("${whatsapp.cloud.token:}") String metaToken,
-            @Nullable @Value("${whatsapp.cloud.phone-number-id:}") String metaPhoneId
+            @Nullable @Value("${resend.api.key:}") String resendApiKey,
+            @Nullable @Value("${resend.from:Apex Track Experience <onboarding@resend.dev>}") String resendFrom
     ) {
         this.circuitoRepository = circuitoRepository;
         this.automovelRepository = automovelRepository;
         this.trackSlotRepository = trackSlotRepository;
         this.pedidoRepository = pedidoRepository;
         this.queueEngine = queueEngine;
-        this.whatsappServiceUrl = whatsappServiceUrl;
-        this.cloudApiConfigured = metaToken != null && !metaToken.isBlank()
-                && metaPhoneId != null && !metaPhoneId.isBlank();
+        this.resendConfigured = resendApiKey != null && !resendApiKey.isBlank();
+        this.resendFrom = resendFrom != null && !resendFrom.isBlank()
+                ? resendFrom
+                : "Apex Track Experience <onboarding@resend.dev>";
     }
 
     @Get("/health")
@@ -80,9 +80,10 @@ public class SystemHealthController {
             database.put("error", e.getMessage());
         }
 
-        Map<String, Object> whatsappGateway = new LinkedHashMap<>();
-        whatsappGateway.put("serviceUrl", whatsappServiceUrl);
-        whatsappGateway.put("cloudApiConfigured", cloudApiConfigured);
+        Map<String, Object> emailGateway = new LinkedHashMap<>();
+        emailGateway.put("provider", "Resend");
+        emailGateway.put("configured", resendConfigured);
+        emailGateway.put("fromAddress", resendFrom);
 
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("status", "UP".equals(database.get("status")) ? "UP" : "DEGRADED");
@@ -90,7 +91,7 @@ public class SystemHealthController {
         report.put("runtime", runtime);
         report.put("database", database);
         report.put("bookingQueue", queueEngine.getMetricas());
-        report.put("whatsappGateway", whatsappGateway);
+        report.put("emailGateway", emailGateway);
         return report;
     }
 }

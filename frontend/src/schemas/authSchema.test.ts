@@ -51,7 +51,7 @@ describe('authSchema - registerSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('deve reprovar registro de cliente sem WhatsApp/telefone válido', () => {
+  it('deve reprovar registro de cliente sem telefone válido', () => {
     const invalidPhone = {
       role: 'CLIENTE',
       nome: 'Carlos Silva',

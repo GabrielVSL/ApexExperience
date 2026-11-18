@@ -23,6 +23,9 @@ class DemoTest {
     @Client("/")
     HttpClient client;
 
+    @Inject
+    com.aluguel.services.EmailService emailService;
+
     @Test
     void testItWorks() {
         Assertions.assertTrue(application.isRunning());
@@ -65,5 +68,10 @@ class DemoTest {
         HttpResponse<java.util.Map> resp = client.toBlocking().exchange(loginReq, java.util.Map.class);
         Assertions.assertEquals(200, resp.getStatus().getCode());
         Assertions.assertNotNull(resp.body().get("access_token"));
+    }
+
+    @Test
+    void testResendUrlComSchemeValido() {
+        Assertions.assertEquals("https://api.resend.com/emails", emailService.getResendApiUrl());
     }
 }

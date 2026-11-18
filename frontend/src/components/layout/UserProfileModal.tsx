@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   ArrowRight,
   Calendar,
@@ -11,8 +11,8 @@ import {
   KeyRound,
   Lock,
   LogOut,
+  Mail,
   MapPin,
-  MessageSquare,
   Phone,
   Shield,
   User,
@@ -42,10 +42,11 @@ interface UserProfileData {
   saldoCarteira?: number;
   statusFinanceiro?: string;
   avatarUrl?: string;
+  accessToken?: string;
 }
 
 type ActiveTab = 'profile' | 'security';
-type PasswordMethod = 'current' | 'whatsapp';
+type PasswordMethod = 'current' | 'email';
 
 function formatPhone(value?: string): string {
   if (!value) return '';
@@ -90,7 +91,7 @@ function getInitials(name?: string, email?: string): string {
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
-  const { user: authUser, logout } = useAuthStore();
+  const { user: authUser, login, logout } = useAuthStore();
 
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +99,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
 
   // Dados pessoais
   const [nome, setNome] = useState('');
+  const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
   const [endereco, setEndereco] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -105,7 +107,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   // Segurança / Senha
   const [passwordMethod, setPasswordMethod] = useState<PasswordMethod>('current');
   const [senhaAtual, setSenhaAtual] = useState('');
-  const [codigoWhatsApp, setCodigoWhatsApp] = useState('');
+  const [codigoEmail, setCodigoEmail] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -138,7 +140,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     setFeedback(null);
     setActiveTab('profile');
     setSenhaAtual('');
-    setCodigoWhatsApp('');
+    setCodigoEmail('');
     setNovaSenha('');
     setConfirmarSenha('');
     setCodeSent(false);
@@ -151,6 +153,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
         const data = res.data;
         setProfile(data);
         setNome(data.nome || '');
+        setEmail(data.email || '');
         setTelefone(formatPhone(data.telefone));
         setEndereco(data.endereco || '');
       })
@@ -192,10 +195,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
 
     setFeedback(null);
     const trimmedName = nome.trim();
+    const trimmedEmail = email.trim().toLowerCase();
     const digitsPhone = telefone.replace(/\D/g, '');
 
     if (trimmedName.length < 2) {
       setFeedback({ type: 'error', message: 'Informe seu nome completo.' });
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFeedback({ type: 'error', message: 'Informe um endereço de e-mail válido.' });
       return;
     }
 
@@ -208,10 +217,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     try {
       const res = await api.put<UserProfileData>('/api/usuarios/me', {
         nome: trimmedName,
+        email: trimmedEmail,
         telefone: digitsPhone,
         endereco: endereco.trim(),
       });
       setProfile((prev) => ({ ...(prev ?? ({} as UserProfileData)), ...res.data }));
+      if (res.data.accessToken && res.data.email) {
+        login(
+          res.data.accessToken,
+          res.data.email,
+          authUser?.role || (res.data.role === 'ADMIN' ? 'ADMIN' : 'CLIENTE')
+        );
+        if (typeof window !== 'undefined' && localStorage.getItem('apex_remembered_email')) {
+          localStorage.setItem('apex_remembered_email', res.data.email);
+        }
+      }
       setFeedback({ type: 'success', message: 'Dados atualizados com sucesso.' });
     } catch (err: any) {
       setFeedback({
@@ -223,33 +243,33 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     }
   };
 
-  const handleRequestWhatsAppCode = async () => {
+  const handleRequestEmailCode = async () => {
     if (isAdmin) return;
     setFeedback(null);
 
-    const digitsPhone = (telefone || profile?.telefone || '').replace(/\D/g, '');
-    if (digitsPhone.length < 10) {
+    const targetEmail = (profile?.email || authUser?.email || '').trim();
+    if (!targetEmail || !targetEmail.includes('@')) {
       setFeedback({
         type: 'error',
-        message: 'Cadastre um telefone válido na aba de dados antes de solicitar o código.',
+        message: 'Nenhum e-mail válido encontrado para este piloto.',
       });
       return;
     }
 
     setRequestingCode(true);
     try {
-      await api.post('/api/usuarios/recuperar-senha-whatsapp/solicitar', {
-        telefone: digitsPhone,
+      await api.post('/api/usuarios/recuperar-senha/solicitar', {
+        email: targetEmail,
       });
       setCodeSent(true);
       setFeedback({
         type: 'success',
-        message: 'Código de verificação enviado para o seu WhatsApp cadastrado.',
+        message: 'Código de verificação enviado para o seu e-mail cadastrado.',
       });
     } catch (err: any) {
       setFeedback({
         type: 'error',
-        message: err?.response?.data?.message || 'Não foi possível enviar o código via WhatsApp.',
+        message: err?.response?.data?.message || 'Não foi possível enviar o código por e-mail.',
       });
     } finally {
       setRequestingCode(false);
@@ -266,8 +286,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
       return;
     }
 
-    if (passwordMethod === 'whatsapp' && codigoWhatsApp.trim().length < 4) {
-      setFeedback({ type: 'error', message: 'Informe o código recebido no WhatsApp.' });
+    if (passwordMethod === 'email' && codigoEmail.trim().length < 4) {
+      setFeedback({ type: 'error', message: 'Informe o código recebido no seu e-mail.' });
       return;
     }
 
@@ -286,11 +306,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
       await api.put('/api/usuarios/me/senha', {
         ...(passwordMethod === 'current'
           ? { senhaAtual: senhaAtual.trim() }
-          : { codigoWhatsApp: codigoWhatsApp.trim() }),
+          : { codigoEmail: codigoEmail.trim() }),
         novaSenha,
       });
       setSenhaAtual('');
-      setCodigoWhatsApp('');
+      setCodigoEmail('');
       setNovaSenha('');
       setConfirmarSenha('');
       setCodeSent(false);
@@ -305,33 +325,29 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
     }
   };
 
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined' || !isOpen) return null;
 
   return createPortal(
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex justify-end font-sans">
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
-          />
+    <div className="fixed inset-0 z-[150] flex justify-end font-sans">
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.18 }}
+        onClick={onClose}
+        className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
+      />
 
-          {/* Slide-over panel */}
-          <motion.aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Minha conta"
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 320 }}
-            className="relative z-10 w-full max-w-[460px] h-full sm:p-3 flex flex-col"
-          >
+      {/* Slide-over panel */}
+      <motion.aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Minha conta"
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 w-full max-w-[460px] h-full sm:p-3 flex flex-col"
+      >
             <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
               {/* Top header */}
               <div className="px-6 pt-6 pb-5 flex items-start justify-between gap-4 shrink-0">
@@ -528,7 +544,27 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
 
                           <div>
                             <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
-                              Telefone / WhatsApp
+                              E-mail de acesso
+                            </label>
+                            <div className="relative">
+                              <Mail
+                                size={15}
+                                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/35"
+                              />
+                              <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                disabled={isAdmin}
+                                placeholder="piloto@apex.com"
+                                className="w-full rounded-2xl bg-[#121622] focus:bg-[#171C2B] disabled:opacity-60 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-white/55 mb-1.5 px-1">
+                              Telefone
                             </label>
                             <div className="relative">
                               <Phone
@@ -636,17 +672,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setPasswordMethod('whatsapp');
+                                    setPasswordMethod('email');
                                     setFeedback(null);
                                   }}
                                   className={`py-2 px-3 rounded-full text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                                    passwordMethod === 'whatsapp'
+                                    passwordMethod === 'email'
                                       ? 'bg-[#1D2333] text-white'
                                       : 'text-white/55 hover:text-white'
                                   }`}
                                 >
-                                  <MessageSquare size={13} />
-                                  <span>Via WhatsApp</span>
+                                  <Mail size={13} />
+                                  <span>Via E-mail</span>
                                 </button>
                               </div>
                             </div>
@@ -683,15 +719,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
                                     <p className="text-xs font-medium text-white">
-                                      Verificação por WhatsApp
+                                      Verificação por E-mail
                                     </p>
                                     <p className="text-xs text-white/50 truncate mt-0.5">
-                                      {telefone || 'Nenhum telefone cadastrado'}
+                                      {profile?.email || authUser?.email || 'E-mail não informado'}
                                     </p>
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={handleRequestWhatsAppCode}
+                                    onClick={handleRequestEmailCode}
                                     disabled={requestingCode}
                                     className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/15 disabled:opacity-50 text-xs font-medium text-white shrink-0 transition-colors cursor-pointer"
                                   >
@@ -706,8 +742,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                                 <input
                                   type="text"
                                   inputMode="numeric"
-                                  value={codigoWhatsApp}
-                                  onChange={(e) => setCodigoWhatsApp(e.target.value)}
+                                  value={codigoEmail}
+                                  onChange={(e) => setCodigoEmail(e.target.value)}
                                   placeholder="Código de verificação"
                                   className="w-full rounded-xl bg-[#0D1017] px-3.5 py-2.5 text-sm text-white placeholder:text-white/25 outline-none focus:ring-2 focus:ring-[#FF1717]/40 transition-all"
                                 />
@@ -796,9 +832,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
               </div>
             </div>
           </motion.aside>
-        </div>
-      )}
-    </AnimatePresence>,
+        </div>,
     document.body
   );
 };

@@ -12,7 +12,7 @@ export const registerSchema = z
     role: z.literal('CLIENTE').default('CLIENTE'),
     nome: z.string().min(3, 'O nome deve ter no mínimo 3 caracteres'),
     email: z.string().email('E-mail inválido'),
-    telefone: z.string().min(14, 'WhatsApp com DDD obrigatório'),
+    telefone: z.string().min(14, 'Telefone com DDD obrigatório'),
     password: z.string().min(6, 'Mínimo de 6 caracteres'),
     confirmPassword: z.string().min(6, 'Obrigatório'),
     endereco: z.string().min(5, 'Endereço obrigatório'),

@@ -52,7 +52,7 @@ public class Usuario {
     @Column
     private LocalDate dataNascimento;
 
-    // --- 📲 RECUPERAÇÃO DE SENHA VIA WHATSAPP (100% GRATUITO / SEM MENSALIDADE) ---
+    // --- 📧 CONTATO & RECUPERAÇÃO DE SENHA VIA E-MAIL ---
     @Column(length = 25)
     private String telefone;
 

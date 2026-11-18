@@ -642,8 +642,7 @@ export default function MeusAlugueisPage() {
       </div>
 
       {/* Drawer de Detalhes da Sessão */}
-      <AnimatePresence>
-        {detailPedido && (() => {
+      {detailPedido && (() => {
           const config = statusConfig[detailPedido.status] || statusConfig.PENDENTE;
           const StatusIcon = config.icon;
           const dataInicio = parseISO(detailPedido.dataInicio);
@@ -677,7 +676,7 @@ export default function MeusAlugueisPage() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
                 onClick={() => setDetailPedido(null)}
                 className="fixed inset-0 bg-[#08090C]/75 backdrop-blur-md"
               />
@@ -688,8 +687,7 @@ export default function MeusAlugueisPage() {
                 aria-label="Detalhes da sessão"
                 initial={{ x: '100%' }}
                 animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 className="relative z-10 w-full max-w-[480px] h-full sm:p-3 flex flex-col"
               >
                 <div className="flex flex-col h-full w-full bg-[#0D1017] sm:rounded-3xl shadow-2xl overflow-hidden">
@@ -900,7 +898,6 @@ export default function MeusAlugueisPage() {
             </div>
           );
         })()}
-      </AnimatePresence>
 
       {qrPedido && (
         <FiaQrPassModal

@@ -87,7 +87,7 @@ describe('AuthPage Component', () => {
     expect(screen.getByText(/Etapa 1 de 3/)).toBeDefined();
   });
 
-  it('deve abrir o modal de recuperação de senha via WhatsApp e permitir digitação do número', () => {
+  it('deve abrir o modal de recuperação de senha via E-mail e permitir digitação do endereço', () => {
     render(
       <MemoryRouter initialEntries={['/login']}>
         <Routes>
@@ -99,8 +99,9 @@ describe('AuthPage Component', () => {
     const forgotBtn = screen.getByText(/Esqueceu a senha\?/i);
     fireEvent.click(forgotBtn);
 
-    expect(screen.getByText(/WhatsApp OTP/i)).toBeDefined();
-    expect(screen.getByPlaceholderText('(11) 98765-4321')).toBeDefined();
-    expect(screen.getByRole('button', { name: /Enviar Código via WhatsApp/i })).toBeDefined();
+    expect(screen.getByText(/E-mail OTP/i)).toBeDefined();
+    expect(screen.getByText('E-mail cadastrado')).toBeDefined();
+    expect(screen.getAllByPlaceholderText('piloto@apex.com').length).toBe(2);
+    expect(screen.getByRole('button', { name: /Enviar Código por E-mail/i })).toBeDefined();
   });
 });

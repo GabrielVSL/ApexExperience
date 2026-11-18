@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   X,
   UserPlus,
@@ -135,27 +135,27 @@ export default function UserCreateModal({
     }
   };
 
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 sm:p-6 overflow-y-auto font-sans">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={handleClose}
-            className="fixed inset-0 bg-[#08090C]/80 backdrop-blur-md"
-          />
+  if (!isOpen) return null;
 
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Novo Cadastro no Paddock"
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            className="relative z-10 w-full max-w-2xl bg-[#0D1017] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-          >
+  return (
+    <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 sm:p-6 overflow-y-auto font-sans">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.18 }}
+        onClick={handleClose}
+        className="fixed inset-0 bg-[#08090C]/80 backdrop-blur-md"
+      />
+
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Novo Cadastro no Paddock"
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 w-full max-w-2xl bg-[#0D1017] rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
             {/* Header */}
             <div className="px-6 py-5 border-b border-white/[0.06] flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -289,7 +289,7 @@ export default function UserCreateModal({
                 </div>
                 <div>
                   <label className="block text-xs text-white/60 mb-1.5">
-                    WhatsApp / Telefone
+                    Telefone (com DDD)
                   </label>
                   <div className="relative">
                     <input
@@ -459,7 +459,5 @@ export default function UserCreateModal({
             </div>
           </motion.div>
         </div>
-      )}
-    </AnimatePresence>
   );
 }

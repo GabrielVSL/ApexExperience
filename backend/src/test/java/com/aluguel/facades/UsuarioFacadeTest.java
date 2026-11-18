@@ -35,7 +35,7 @@ class UsuarioFacadeTest {
     private AgenteRepository agenteRepository;
 
     @Mock
-    private com.aluguel.services.WhatsAppService whatsAppService;
+    private com.aluguel.services.EmailService emailService;
 
     private ClienteFacade clienteFacade;
     private UsuarioFacade usuarioFacade;
@@ -43,7 +43,7 @@ class UsuarioFacadeTest {
     @BeforeEach
     void setUp() {
         clienteFacade = new ClienteFacade(clienteRepository);
-        usuarioFacade = new UsuarioFacade(usuarioRepository, clienteRepository, agenteRepository, clienteFacade, whatsAppService);
+        usuarioFacade = new UsuarioFacade(usuarioRepository, clienteRepository, agenteRepository, clienteFacade, emailService);
     }
 
     @Test
@@ -167,61 +167,60 @@ class UsuarioFacadeTest {
     }
 
     @Test
-    @DisplayName("Deve solicitar código de recuperação via WhatsApp com sucesso")
-    void deveSolicitarCodigoWhatsAppComSucesso() {
+    @DisplayName("Deve solicitar código de recuperação por E-mail com sucesso")
+    void deveSolicitarCodigoEmailComSucesso() {
         Usuario mockUser = new Usuario();
+        mockUser.setNome("Gabriel Piloto");
         mockUser.setEmail("piloto@apex.com");
-        mockUser.setTelefone("11987654321");
 
-        when(usuarioRepository.findByTelefone("11987654321")).thenReturn(Optional.of(mockUser));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(mockUser));
         when(usuarioRepository.update(any(Usuario.class))).thenReturn(mockUser);
-        when(whatsAppService.enviarCodigo(eq("11987654321"), anyString())).thenReturn(true);
+        when(emailService.enviarCodigo(eq("piloto@apex.com"), eq("Gabriel Piloto"), anyString())).thenReturn(true);
 
-        Map<String, Object> resp = usuarioFacade.solicitarRecuperacaoSenhaWhatsApp("(11) 98765-4321");
+        Map<String, Object> resp = usuarioFacade.solicitarRecuperacaoSenhaEmail("piloto@apex.com");
         assertTrue((Boolean) resp.get("success"));
         assertNull(resp.get("codigoSandbox"));
-        assertEquals("Código de segurança enviado com sucesso para o seu WhatsApp!", resp.get("message"));
+        assertEquals("Código de segurança enviado com sucesso para o seu e-mail!", resp.get("message"));
     }
 
     @Test
-    @DisplayName("Deve rejeitar solicitação para telefone não cadastrado")
-    void deveRejeitarSolicitacaoTelefoneNaoCadastrado() {
-        when(usuarioRepository.findByTelefone("11999999999")).thenReturn(Optional.empty());
+    @DisplayName("Deve rejeitar solicitação para e-mail não cadastrado")
+    void deveRejeitarSolicitacaoEmailNaoCadastrado() {
+        when(usuarioRepository.findByEmail("naoexiste@apex.com")).thenReturn(Optional.empty());
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-            usuarioFacade.solicitarRecuperacaoSenhaWhatsApp("(11) 99999-9999")
+            usuarioFacade.solicitarRecuperacaoSenhaEmail("naoexiste@apex.com")
         );
-        assertTrue(ex.getMessage().contains("Nenhum piloto encontrado com o WhatsApp"));
+        assertTrue(ex.getMessage().contains("Nenhum piloto encontrado com o e-mail"));
     }
 
     @Test
     @DisplayName("Deve bloquear nova solicitação em menos de 60 segundos (Rate Limiting)")
     void deveBloquearSolicitacaoEmMenosDe60Segundos() {
         Usuario mockUser = new Usuario();
-        mockUser.setTelefone("11987654321");
+        mockUser.setEmail("piloto@apex.com");
         mockUser.setCodigoRecuperacaoExpiraEm(java.time.LocalDateTime.now().plusMinutes(9).plusSeconds(30));
 
-        when(usuarioRepository.findByTelefone("11987654321")).thenReturn(Optional.of(mockUser));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(mockUser));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-            usuarioFacade.solicitarRecuperacaoSenhaWhatsApp("11987654321")
+            usuarioFacade.solicitarRecuperacaoSenhaEmail("piloto@apex.com")
         );
         assertTrue(ex.getMessage().contains("Aguarde 60 segundos"));
     }
 
     @Test
-    @DisplayName("Deve redefinir senha via WhatsApp com código válido")
-    void deveRedefinirSenhaWhatsAppComSucesso() {
+    @DisplayName("Deve redefinir senha por E-mail com código válido")
+    void deveRedefinirSenhaEmailComSucesso() {
         Usuario mockUser = new Usuario();
         mockUser.setEmail("piloto@apex.com");
-        mockUser.setTelefone("11987654321");
         mockUser.setCodigoRecuperacao("123456");
         mockUser.setCodigoRecuperacaoExpiraEm(java.time.LocalDateTime.now().plusMinutes(5));
 
-        when(usuarioRepository.findByTelefone("11987654321")).thenReturn(Optional.of(mockUser));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(mockUser));
         when(usuarioRepository.update(any(Usuario.class))).thenReturn(mockUser);
 
-        Map<String, Object> resp = usuarioFacade.redefinirSenhaWhatsApp("11987654321", "123456", "novaSenhaApex123");
+        Map<String, Object> resp = usuarioFacade.redefinirSenhaEmail("piloto@apex.com", "123456", "novaSenhaApex123");
         assertTrue((Boolean) resp.get("success"));
         assertNull(mockUser.getCodigoRecuperacao());
     }
@@ -230,16 +229,16 @@ class UsuarioFacadeTest {
     @DisplayName("Deve bloquear e invalidar código após 3 tentativas incorretas")
     void deveBloquearAposTresTentativasIncorretas() {
         Usuario mockUser = new Usuario();
-        mockUser.setTelefone("11987654321");
+        mockUser.setEmail("piloto@apex.com");
         mockUser.setCodigoRecuperacao("123456");
         mockUser.setCodigoRecuperacaoExpiraEm(java.time.LocalDateTime.now().plusMinutes(5));
         mockUser.setTentativasRecuperacao(3); // Já errou 3 vezes
 
-        when(usuarioRepository.findByTelefone("11987654321")).thenReturn(Optional.of(mockUser));
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(mockUser));
         when(usuarioRepository.update(any(Usuario.class))).thenReturn(mockUser);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-            usuarioFacade.redefinirSenhaWhatsApp("11987654321", "999999", "novaSenhaApex123")
+            usuarioFacade.redefinirSenhaEmail("piloto@apex.com", "999999", "novaSenhaApex123")
         );
         assertTrue(ex.getMessage().contains("Limite de 3 tentativas excedido"));
         assertNull(mockUser.getCodigoRecuperacao());
@@ -251,18 +250,57 @@ class UsuarioFacadeTest {
         Usuario admin = new Usuario();
         admin.setEmail("admin@apex.com");
         admin.setRole("ROLE_ADMIN");
-        admin.setTelefone("11999999999");
 
-        when(usuarioRepository.findByTelefone("11999999999")).thenReturn(Optional.of(admin));
+        when(usuarioRepository.findByEmail("admin@apex.com")).thenReturn(Optional.of(admin));
 
         IllegalStateException exSolicitar = assertThrows(IllegalStateException.class, () ->
-                usuarioFacade.solicitarRecuperacaoSenhaWhatsApp("11999999999")
+                usuarioFacade.solicitarRecuperacaoSenhaEmail("admin@apex.com")
         );
         assertTrue(exSolicitar.getMessage().contains("conta de Administrador é protegida"));
 
         IllegalStateException exRedefinir = assertThrows(IllegalStateException.class, () ->
-                usuarioFacade.redefinirSenhaWhatsApp("11999999999", "123456", "novaSenha123")
+                usuarioFacade.redefinirSenhaEmail("admin@apex.com", "123456", "novaSenha123")
         );
         assertTrue(exRedefinir.getMessage().contains("conta de Administrador é protegida"));
+    }
+
+    @Test
+    @DisplayName("Deve permitir piloto alterar o próprio e-mail quando disponível")
+    void devePermitirPilotoAlterarProprioEmail() {
+        Usuario piloto = new Usuario();
+        piloto.setId(7L);
+        piloto.setNome("Gabriel Piloto");
+        piloto.setEmail("antigo@apex.com");
+        piloto.setRole("ROLE_CLIENTE");
+
+        when(usuarioRepository.findByEmail("antigo@apex.com")).thenReturn(Optional.of(piloto));
+        when(usuarioRepository.findByEmail("novo@apex.com")).thenReturn(Optional.empty(), Optional.of(piloto));
+        when(usuarioRepository.update(any(Usuario.class))).thenReturn(piloto);
+
+        Map<String, Object> perfil = usuarioFacade.atualizarPerfil("antigo@apex.com", Map.of("email", "  NOVO@APEX.COM "));
+
+        assertEquals("novo@apex.com", piloto.getEmail());
+        assertEquals("novo@apex.com", perfil.get("email"));
+    }
+
+    @Test
+    @DisplayName("Deve bloquear troca de e-mail para endereço já cadastrado por outro usuário")
+    void deveBloquearTrocaEmailDuplicado() {
+        Usuario piloto = new Usuario();
+        piloto.setId(7L);
+        piloto.setEmail("piloto@apex.com");
+        piloto.setRole("ROLE_CLIENTE");
+
+        Usuario outro = new Usuario();
+        outro.setId(9L);
+        outro.setEmail("usado@apex.com");
+
+        when(usuarioRepository.findByEmail("piloto@apex.com")).thenReturn(Optional.of(piloto));
+        when(usuarioRepository.findByEmail("usado@apex.com")).thenReturn(Optional.of(outro));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                usuarioFacade.atualizarPerfil("piloto@apex.com", Map.of("email", "usado@apex.com"))
+        );
+        assertTrue(ex.getMessage().contains("Já existe outra conta cadastrada com este e-mail"));
     }
 }

@@ -27,7 +27,7 @@ public class PedidoFacade {
     private final UsuarioRepository usuarioRepository;
     private final TrackSlotRepository trackSlotRepository;
     private final ApexPayFacade apexPayFacade;
-    private final com.aluguel.services.WhatsAppService whatsAppService;
+    private final com.aluguel.services.EmailService emailService;
     private final com.aluguel.services.QrCodePassService qrCodePassService;
 
     @Inject
@@ -36,14 +36,14 @@ public class PedidoFacade {
                         UsuarioRepository usuarioRepository,
                         TrackSlotRepository trackSlotRepository,
                         ApexPayFacade apexPayFacade,
-                        @io.micronaut.core.annotation.Nullable com.aluguel.services.WhatsAppService whatsAppService,
+                        @io.micronaut.core.annotation.Nullable com.aluguel.services.EmailService emailService,
                         @io.micronaut.core.annotation.Nullable com.aluguel.services.QrCodePassService qrCodePassService) {
         this.pedidoRepository = pedidoRepository;
         this.automovelRepository = automovelRepository;
         this.usuarioRepository = usuarioRepository;
         this.trackSlotRepository = trackSlotRepository;
         this.apexPayFacade = apexPayFacade;
-        this.whatsAppService = whatsAppService;
+        this.emailService = emailService;
         this.qrCodePassService = qrCodePassService;
     }
 
@@ -52,8 +52,8 @@ public class PedidoFacade {
                         UsuarioRepository usuarioRepository,
                         TrackSlotRepository trackSlotRepository,
                         ApexPayFacade apexPayFacade,
-                        com.aluguel.services.WhatsAppService whatsAppService) {
-        this(pedidoRepository, automovelRepository, usuarioRepository, trackSlotRepository, apexPayFacade, whatsAppService, null);
+                        com.aluguel.services.EmailService emailService) {
+        this(pedidoRepository, automovelRepository, usuarioRepository, trackSlotRepository, apexPayFacade, emailService, null);
     }
 
     public PedidoFacade(PedidoRepository pedidoRepository,
@@ -252,12 +252,12 @@ public class PedidoFacade {
             salvo = pedidoRepository.update(salvo);
         }
 
-        // Se a reserva já nasce APROVADA (ex: paga via Carteira ApexPay), dispara passe no WhatsApp
-        if ("APROVADO".equals(salvo.getStatus()) && whatsAppService != null && cliente.getTelefone() != null && !cliente.getTelefone().isBlank()) {
+        // Se a reserva já nasce APROVADA (ex: paga via Carteira ApexPay), dispara passe por e-mail
+        if ("APROVADO".equals(salvo.getStatus()) && emailService != null && cliente.getEmail() != null && !cliente.getEmail().isBlank()) {
             String modeloCarro = automovel != null ? (automovel.getMarca() + " " + automovel.getModelo()) : "Acesso Boxes / Visita VIP";
             String pista = salvo.getTrackSlot() != null && salvo.getTrackSlot().getCircuito() != null ? salvo.getTrackSlot().getCircuito().getNome() : "Circuito Apex Track";
             String dataFormatada = salvo.getDataInicio() != null ? salvo.getDataInicio().toString().replace("T", " ") : "Data confirmada";
-            whatsAppService.enviarConfirmacaoReservaAsync(cliente.getTelefone(), cliente.getNome(), modeloCarro, pista, dataFormatada, salvo.getId(), salvo.getQrCodePayload());
+            emailService.enviarConfirmacaoReservaAsync(cliente.getEmail(), cliente.getNome(), modeloCarro, pista, dataFormatada, salvo.getId(), salvo.getQrCodePayload());
         }
 
         return salvo;
@@ -291,12 +291,12 @@ public class PedidoFacade {
                 qrCodePassService.gerarOuAtualizarQrCode(pedido);
             }
 
-            // Dispara Passe com QR Code no WhatsApp após homologação do Race Control
-            if (whatsAppService != null && pedido.getCliente() != null && pedido.getCliente().getTelefone() != null && !pedido.getCliente().getTelefone().isBlank()) {
+            // Dispara Passe com QR Code por e-mail após homologação do Race Control
+            if (emailService != null && pedido.getCliente() != null && pedido.getCliente().getEmail() != null && !pedido.getCliente().getEmail().isBlank()) {
                 String modeloCarro = pedido.getAutomovel() != null ? (pedido.getAutomovel().getMarca() + " " + pedido.getAutomovel().getModelo()) : "Acesso Boxes / Visita VIP";
                 String pista = pedido.getTrackSlot() != null && pedido.getTrackSlot().getCircuito() != null ? pedido.getTrackSlot().getCircuito().getNome() : "Circuito Apex Track";
                 String dataFormatada = pedido.getDataInicio() != null ? pedido.getDataInicio().toString().replace("T", " ") : "Data confirmada";
-                whatsAppService.enviarConfirmacaoReservaAsync(pedido.getCliente().getTelefone(), pedido.getCliente().getNome(), modeloCarro, pista, dataFormatada, pedido.getId(), pedido.getQrCodePayload());
+                emailService.enviarConfirmacaoReservaAsync(pedido.getCliente().getEmail(), pedido.getCliente().getNome(), modeloCarro, pista, dataFormatada, pedido.getId(), pedido.getQrCodePayload());
             }
         } else {
             pedido.setStatus("REJEITADO");

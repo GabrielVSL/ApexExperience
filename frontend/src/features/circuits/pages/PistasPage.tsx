@@ -77,6 +77,10 @@ const CIRCUIT_META: Record<string, CircuitDisplayMeta> = {
   },
 };
 
+const VIDEO_START_OFFSET_SECONDS: Record<string, number> = {
+  suzuka: 2,
+};
+
 export default function PistasPage() {
   const [selectedCircuit, setSelectedCircuit] = useState<Circuit>(CIRCUITS[0]);
   const [fleet, setFleet] = useState<Automovel[]>([]);
@@ -88,6 +92,7 @@ export default function PistasPage() {
   const [weatherData, setWeatherData] = useState<Record<string, CircuitLiveWeather>>({});
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const startOffsetSeconds = VIDEO_START_OFFSET_SECONDS[selectedCircuit.id] ?? 0;
 
   const currentIndex = CIRCUITS.findIndex((c) => c.id === selectedCircuit.id);
 
@@ -190,9 +195,9 @@ export default function PistasPage() {
   };
 
   return (
-    <div className="relative w-screen h-[100dvh] max-h-[100dvh] bg-[#08090C] text-white overflow-hidden select-none font-sans">
+    <div className="relative w-full min-h-[100dvh] bg-[#08090C] text-white overflow-x-hidden select-none font-sans flex flex-col">
       {/* 1. Vídeo Nativo de Fundo */}
-      <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
+      <div className="fixed inset-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <img
           key={`poster-${selectedCircuit.id}`}
           src={selectedCircuit.videoThumbnail}
@@ -207,11 +212,39 @@ export default function PistasPage() {
           key={`video-${selectedCircuit.id}`}
           src={`/circuits/${selectedCircuit.id}.mp4`}
           autoPlay
-          loop
+          loop={startOffsetSeconds === 0}
           muted={isMuted}
           playsInline
-          onPlaying={() => setIsVideoReady(true)}
-          onCanPlayThrough={() => setIsVideoReady(true)}
+          onLoadedMetadata={(e) => {
+            if (startOffsetSeconds > 0 && e.currentTarget.currentTime < startOffsetSeconds) {
+              e.currentTarget.currentTime = startOffsetSeconds;
+            }
+          }}
+          onSeeked={(e) => {
+            if (startOffsetSeconds > 0 && e.currentTarget.currentTime >= startOffsetSeconds - 0.1) {
+              setIsVideoReady(true);
+            }
+          }}
+          onPlaying={(e) => {
+            if (startOffsetSeconds > 0 && e.currentTarget.currentTime < startOffsetSeconds - 0.1) {
+              e.currentTarget.currentTime = startOffsetSeconds;
+              return;
+            }
+            setIsVideoReady(true);
+          }}
+          onCanPlayThrough={(e) => {
+            if (startOffsetSeconds > 0 && e.currentTarget.currentTime < startOffsetSeconds - 0.1) {
+              e.currentTarget.currentTime = startOffsetSeconds;
+              return;
+            }
+            setIsVideoReady(true);
+          }}
+          onEnded={(e) => {
+            if (startOffsetSeconds > 0) {
+              e.currentTarget.currentTime = startOffsetSeconds;
+              e.currentTarget.play().catch(() => {});
+            }
+          }}
           className="absolute inset-0 w-full h-full object-cover opacity-85 z-0"
         />
 
@@ -222,7 +255,7 @@ export default function PistasPage() {
       </div>
 
       {/* 2. Controle de Áudio Discreto */}
-      <div className="absolute top-20 sm:top-24 right-6 sm:right-10 z-20 pointer-events-auto">
+      <div className="fixed top-20 right-3.5 sm:right-5 z-20 pointer-events-auto">
         <button
           type="button"
           onClick={() => setIsMuted((prev) => !prev)}
@@ -238,148 +271,151 @@ export default function PistasPage() {
         </button>
       </div>
 
-      {/* 3. Coluna Principal Esquerda */}
-      <div className="relative z-10 w-full h-full flex flex-col justify-start pt-16 sm:pt-20 pb-22 px-6 sm:px-10 lg:px-14 pointer-events-none overflow-hidden">
-        <div className="max-w-2xl w-full flex flex-col justify-start pointer-events-auto h-full pb-2">
-          {/* Pill de Localização com Bandeira */}
-          <div className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1 rounded-full bg-white/[0.06] backdrop-blur-md self-start mb-2.5 shrink-0">
-            <CountryFlag countryCode={currentMeta.countryCode} className="w-4 h-3 rounded-[2px]" />
-            <span className="text-xs font-medium text-white/80">
-              {currentMeta.countryName} · {currentMeta.modality}
-            </span>
-          </div>
-
-          {/* Título do Circuito */}
-          <h1 className="text-2xl sm:text-4xl lg:text-[44px] font-medium tracking-tight text-white leading-[1.08] mb-2 shrink-0">
-            {selectedCircuit.name}
-          </h1>
-
-          {/* Sinopse */}
-          <p className="text-xs sm:text-sm text-white/65 font-normal leading-relaxed mb-3.5 max-w-xl shrink-0 line-clamp-2">
-            {selectedCircuit.synopsis}
-          </p>
-
-          {/* Barra de Telemetria da Pista (Sem Borda Dura, Arredondada) */}
-          <div className="flex flex-wrap items-center gap-5 sm:gap-7 py-3 px-4 mb-3.5 rounded-2xl bg-[#0D1017]/85 backdrop-blur-md max-w-xl shrink-0">
-            <div>
-              <span className="block text-[11px] text-white/45">Extensão</span>
-              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
-                {selectedCircuit.lengthKm}
+      {/* 3. Conteúdo Principal Responsivo (Coluna Info à Esquerda + Mapa Proporcional à Direita) */}
+      <div className="relative z-10 w-full flex-1 pt-20 pb-3 px-5 sm:px-8 lg:px-14 pointer-events-none flex flex-col justify-end lg:justify-center">
+        <div className="w-full max-w-7xl mx-auto flex flex-col lg:grid lg:grid-cols-[minmax(0,560px)_1fr] lg:items-center gap-5 lg:gap-8 xl:gap-12">
+          {/* Coluna Esquerda: Informações do Circuito + Frota + Ação */}
+          <div className="w-full max-w-xl flex flex-col justify-center pointer-events-auto min-w-0">
+            {/* Pill de Localização com Bandeira */}
+            <div className="inline-flex items-center gap-2.5 pl-2.5 pr-3.5 py-1 rounded-full bg-white/[0.06] backdrop-blur-md self-start mb-2 shrink-0">
+              <CountryFlag countryCode={currentMeta.countryCode} className="w-4 h-3 rounded-[2px]" />
+              <span className="text-xs font-medium text-white/80">
+                {currentMeta.countryName} · {currentMeta.modality}
               </span>
             </div>
 
-            <div>
-              <span className="block text-[11px] text-white/45">Traçado</span>
-              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
-                {selectedCircuit.corners} curvas
-              </span>
-            </div>
+            {/* Título do Circuito */}
+            <h1 className="text-2xl sm:text-3xl xl:text-[42px] font-medium tracking-tight text-white leading-[1.08] mb-2 shrink-0">
+              {selectedCircuit.name}
+            </h1>
 
-            <div>
-              <span className="block text-[11px] text-white/45">Recorde</span>
-              <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
-                {selectedCircuit.lapRecord}
-              </span>
-            </div>
+            {/* Sinopse */}
+            <p className="text-xs sm:text-sm text-white/65 font-normal leading-relaxed mb-3 max-w-xl shrink-0 line-clamp-2">
+              {selectedCircuit.synopsis}
+            </p>
 
-            {activeWeather && (
-              <div className="hidden sm:block">
-                <span className="block text-[11px] text-white/45">Asfalto</span>
-                <span className="text-xs sm:text-sm font-medium text-white tabular-nums inline-flex items-center gap-1">
-                  <Thermometer size={12} className="text-[#FF1717]" />
-                  {activeWeather.temperature}°C · {activeWeather.gripStatus}
+            {/* Barra de Telemetria da Pista */}
+            <div className="flex flex-wrap items-center gap-4 sm:gap-6 py-2.5 px-4 mb-3 rounded-2xl bg-[#0D1017]/85 backdrop-blur-md max-w-xl shrink-0">
+              <div>
+                <span className="block text-[11px] text-white/45">Extensão</span>
+                <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
+                  {selectedCircuit.lengthKm}
                 </span>
               </div>
-            )}
-          </div>
 
-          {/* Supercarros Homologados no Box + Botão de Disponibilidade */}
-          <div className="mb-3.5 max-w-xl shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-white/60">
-                Supercarros homologados no box
-              </span>
-              <span className="text-[11px] text-white/45 tabular-nums">
-                {circuitCars.length} {circuitCars.length === 1 ? 'modelo' : 'modelos'}
-              </span>
+              <div>
+                <span className="block text-[11px] text-white/45">Traçado</span>
+                <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
+                  {selectedCircuit.corners} curvas
+                </span>
+              </div>
+
+              <div>
+                <span className="block text-[11px] text-white/45">Recorde</span>
+                <span className="text-xs sm:text-sm font-medium text-white tabular-nums">
+                  {selectedCircuit.lapRecord}
+                </span>
+              </div>
+
+              {activeWeather && (
+                <div className="hidden sm:block">
+                  <span className="block text-[11px] text-white/45">Asfalto</span>
+                  <span className="text-xs sm:text-sm font-medium text-white tabular-nums inline-flex items-center gap-1">
+                    <Thermometer size={12} className="text-[#FF1717]" />
+                    {activeWeather.temperature}°C · {activeWeather.gripStatus}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {circuitCars.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-                {circuitCars.map((car) => {
-                  const specs = getCarDisplaySpecs(car);
-                  return (
-                    <button
-                      key={car.id}
-                      type="button"
-                      onClick={() => handleOpenBooking(car)}
-                      className="group relative rounded-2xl bg-[#0D1017]/80 hover:bg-[#141925] backdrop-blur-md p-2.5 sm:p-3 text-left transition-all duration-200 cursor-pointer"
-                      title={`Agendar sessão com ${car.marca} ${car.modelo}`}
-                    >
-                      <div className="relative h-14 sm:h-16 w-full flex items-center justify-center mb-2">
-                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[75%] h-3 rounded-full bg-black/80 blur-md group-hover:bg-[#FF1717]/20 transition-colors pointer-events-none" />
-                        <img
-                          src={resolveStudioCarImage(car)}
-                          alt={`${car.marca} ${car.modelo}`}
-                          loading="lazy"
-                          className="relative z-10 w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.9)] group-hover:-translate-y-0.5 group-hover:scale-[1.05] transition-transform duration-300"
-                        />
-                      </div>
-
-                      <p className="text-[11px] sm:text-xs font-medium text-white truncate">
-                        {car.modelo}
-                      </p>
-                      <p className="text-[10px] sm:text-[11px] text-white/45 tabular-nums truncate">
-                        {specs.power} · {specs.accel}
-                      </p>
-                    </button>
-                  );
-                })}
+            {/* Supercarros Homologados no Box */}
+            <div className="mb-3 max-w-xl shrink-0">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-white/60">
+                  Supercarros homologados no box
+                </span>
+                <span className="text-[11px] text-white/45 tabular-nums">
+                  {circuitCars.length} {circuitCars.length === 1 ? 'modelo' : 'modelos'}
+                </span>
               </div>
-            ) : (
-              <p className="text-xs text-white/40 py-3">
-                Conecte o backend para carregar os carros deste box...
-              </p>
-            )}
+
+              {circuitCars.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+                  {circuitCars.map((car) => {
+                    const specs = getCarDisplaySpecs(car);
+                    return (
+                      <button
+                        key={car.id}
+                        type="button"
+                        onClick={() => handleOpenBooking(car)}
+                        className="group relative rounded-2xl bg-[#0D1017]/80 hover:bg-[#141925] backdrop-blur-md p-2.5 sm:p-3 text-left transition-all duration-200 cursor-pointer"
+                        title={`Agendar sessão com ${car.marca} ${car.modelo}`}
+                      >
+                        <div className="relative h-12 sm:h-14 xl:h-16 w-full flex items-center justify-center mb-1.5">
+                          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[75%] h-3 rounded-full bg-black/80 blur-md group-hover:bg-[#FF1717]/20 transition-colors pointer-events-none" />
+                          <img
+                            src={resolveStudioCarImage(car)}
+                            alt={`${car.marca} ${car.modelo}`}
+                            loading="lazy"
+                            className="relative z-10 w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(0,0,0,0.9)] group-hover:-translate-y-0.5 group-hover:scale-[1.05] transition-transform duration-300"
+                          />
+                        </div>
+
+                        <p className="text-[11px] sm:text-xs font-medium text-white truncate">
+                          {car.modelo}
+                        </p>
+                        <p className="text-[10px] sm:text-[11px] text-white/45 tabular-nums truncate">
+                          {specs.power} · {specs.accel}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-white/40 py-3">
+                  Conecte o backend para carregar os carros deste box...
+                </p>
+              )}
+            </div>
+
+            {/* Ação Principal */}
+            <div className="flex items-center justify-between gap-4 max-w-xl shrink-0">
+              <span className="text-[11px] text-white/45 hidden sm:inline">
+                Clique em um veículo ou abra a agenda completa do circuito
+              </span>
+
+              {isStaff ? (
+                <Link
+                  to={staffTarget}
+                  className="inline-flex items-center gap-2 bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-medium px-5 py-2.5 rounded-full transition-colors ml-auto"
+                >
+                  <span>Gerenciar nos boxes</span>
+                  <ArrowUpRight size={14} />
+                </Link>
+              ) : (
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBooking()}
+                    className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs font-medium px-5 py-2.5 rounded-full transition-colors cursor-pointer"
+                  >
+                    Ver disponibilidade
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBooking()}
+                    aria-label="Ver disponibilidade"
+                    className="w-9 h-9 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
+                  >
+                    <ArrowUpRight size={15} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Ação Principal (Estética Pílula + Círculo Vermelho) */}
-          <div className="flex items-center justify-between gap-4 mb-3 max-w-xl shrink-0">
-            <span className="text-[11px] text-white/45 hidden sm:inline">
-              Clique em um veículo ou abra a agenda completa do circuito
-            </span>
-
-            {isStaff ? (
-              <Link
-                to={staffTarget}
-                className="inline-flex items-center gap-2 bg-white text-[#08090C] hover:bg-[#FF1717] hover:text-white text-xs font-medium px-5 py-2.5 rounded-full transition-colors ml-auto"
-              >
-                <span>Gerenciar nos boxes</span>
-                <ArrowUpRight size={14} />
-              </Link>
-            ) : (
-              <div className="flex items-center gap-2 ml-auto">
-                <button
-                  type="button"
-                  onClick={() => handleOpenBooking()}
-                  className="inline-flex items-center bg-white text-[#08090C] hover:bg-white/90 text-xs font-medium px-5 py-2.5 rounded-full transition-colors cursor-pointer"
-                >
-                  Ver disponibilidade
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleOpenBooking()}
-                  aria-label="Ver disponibilidade"
-                  className="w-9 h-9 rounded-full bg-[#FF1717] hover:bg-[#e01414] text-white flex items-center justify-center transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,23,23,0.35)] cursor-pointer"
-                >
-                  <ArrowUpRight size={15} />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Mapa Interativo Arredondado Sem Borda */}
-          <div className="w-full max-w-xl flex-1 min-h-[140px] max-h-[340px] rounded-3xl bg-[#0D1017]/85 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.85)] overflow-hidden relative">
+          {/* Coluna Direita: Mapa Interativo centralizado e dimensionado com respiro */}
+          <div className="pointer-events-auto w-full max-w-xl lg:max-w-[480px] xl:max-w-[540px] h-[220px] sm:h-[240px] lg:h-[310px] xl:h-[340px] lg:min-h-0 lg:self-center lg:justify-self-center flex flex-col rounded-3xl bg-[#0D1017]/85 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.85)] overflow-hidden relative">
             <button
               type="button"
               onClick={() => setIsMapModalOpen(true)}
@@ -389,20 +425,22 @@ export default function PistasPage() {
               <Maximize2 size={13} />
             </button>
 
-            <WorldMapCanvas
-              circuits={CIRCUITS}
-              selectedCircuit={selectedCircuit}
-              compact={true}
-            />
+            <div className="relative w-full flex-1 min-h-0">
+              <WorldMapCanvas
+                circuits={CIRCUITS}
+                selectedCircuit={selectedCircuit}
+                compact={true}
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* =========================================================================
-          4. FITA NO RODAPÉ: TODOS OS 8 CIRCUITOS VISÍVEIS SEM SCROLLBAR E SEM RETICÊNCIAS
+          4. FITA NO RODAPÉ: TODOS OS 8 CIRCUITOS NO FLUXO SEM COLISÃO
           ========================================================================= */}
-      <div className="absolute bottom-3 left-0 right-0 z-30 pointer-events-auto flex items-center justify-center px-4 sm:px-8">
-        <div className="flex items-center gap-2 sm:gap-2.5 w-full max-w-7xl mx-auto">
+      <div className="relative z-30 shrink-0 pointer-events-auto flex items-center justify-center px-4 sm:px-8 lg:px-12 xl:px-14 pt-2 pb-3">
+        <div className="flex items-center gap-2 w-full max-w-7xl mx-auto overflow-x-auto no-scrollbar lg:overflow-visible">
           {CIRCUITS.map((circuit) => {
             const isActive = circuit.id === selectedCircuit.id;
             const meta = CIRCUIT_META[circuit.id] || {
@@ -417,7 +455,7 @@ export default function PistasPage() {
                 key={circuit.id}
                 type="button"
                 onClick={() => handleSelectCircuit(circuit)}
-                className={`group relative flex-1 min-w-0 flex items-center gap-2 px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-xl transition-all duration-200 cursor-pointer border ${
+                className={`group relative shrink-0 lg:shrink lg:flex-auto min-w-[132px] lg:min-w-0 flex items-center gap-2 px-2.5 xl:px-3 py-2 sm:py-2.5 rounded-xl transition-all duration-200 cursor-pointer border ${
                   isActive
                     ? 'bg-white/10 border-[#FF1717] ring-1 ring-[#FF1717]/50 shadow-lg'
                     : 'bg-[#08090C]/80 hover:bg-white/[0.07] border-white/10 hover:border-white/20'
@@ -429,13 +467,13 @@ export default function PistasPage() {
                   className="w-5 h-3.5 sm:w-6 sm:h-4 rounded-[2px] shadow-sm border border-white/10 shrink-0"
                 />
 
-                {/* Nome do Circuito e País Padronizados (Sem reticências no Spa) */}
+                {/* Nome do Circuito e País Padronizados */}
                 <div className="flex flex-col items-start text-left min-w-0 flex-1 overflow-hidden">
                   <span className="text-[9px] font-mono text-white/45 uppercase tracking-wider truncate w-full leading-none mb-1">
                     {meta.countryName}
                   </span>
                   <span
-                    className={`text-[11px] sm:text-xs tracking-tight whitespace-nowrap transition-colors ${
+                    className={`text-[11px] xl:text-xs tracking-tight truncate w-full transition-colors ${
                       isActive ? 'text-white font-semibold' : 'text-white/80 group-hover:text-white'
                     }`}
                   >
